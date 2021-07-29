@@ -22,5 +22,5 @@ jobs:
         env:
           SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
         run: |
-          snyk monitor --project-name=kminion --remote-repo=redpanda-data/kminion --target-reference=${GITHUB_REF#refs/heads/} .
+          snyk monitor --project-name=kminion --remote-repo=adobe/kminion --target-reference=${GITHUB_REF#refs/heads/} .
         shell: bash
