@@ -32,11 +32,15 @@ type Exporter struct {
 	topicLogDirSize  *prometheus.Desc
 
 	// Topic / Partition
-	topicInfo              *prometheus.Desc
-	topicHighWaterMarkSum  *prometheus.Desc
-	partitionHighWaterMark *prometheus.Desc
-	topicLowWaterMarkSum   *prometheus.Desc
-	partitionLowWaterMark  *prometheus.Desc
+	topicInfo                  *prometheus.Desc
+	topicInfoPartitionsCount   *prometheus.Desc
+	topicInfoReplicationFactor *prometheus.Desc
+	topicInfoMinInsyncReplicas *prometheus.Desc
+	topicInfoRetentionMs       *prometheus.Desc
+	topicHighWaterMarkSum      *prometheus.Desc
+	partitionHighWaterMark     *prometheus.Desc
+	topicLowWaterMarkSum       *prometheus.Desc
+	partitionLowWaterMark      *prometheus.Desc
 
 	// Consumer Groups
 	consumerGroupInfo                    *prometheus.Desc
@@ -112,6 +116,30 @@ func (e *Exporter) InitializeMetrics() {
 		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info"),
 		"Info labels for a given topic",
 		labels,
+		nil,
+	)
+	e.topicInfoPartitionsCount = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_partitions_count"),
+		"Partitions configuration for a given topic",
+		[]string{"topic_name"},
+		nil,
+	)
+	e.topicInfoReplicationFactor = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_replication_factor"),
+		"Replication factor configuration for a given topic",
+		[]string{"topic_name"},
+		nil,
+	)
+	e.topicInfoMinInsyncReplicas = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_min_insync_replicas"),
+		"Min in-sync replicas configuration for a given topic",
+		[]string{"topic_name"},
+		nil,
+	)
+	e.topicInfoRetentionMs = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_retention_ms"),
+		"Retention time for a given topic",
+		[]string{"topic_name"},
 		nil,
 	)
 	// Partition Low Water Mark
