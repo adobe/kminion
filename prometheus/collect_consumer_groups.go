@@ -23,6 +23,7 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 
 	// The list of groups may be incomplete due to group coordinators that might fail to respond. We do log an error
 	// message in that case (in the kafka request method) and groups will not be included in this list.
+	emptyGroups := 0
 	for _, grp := range groups {
 		coordinator := grp.BrokerMetadata.NodeID
 		for _, group := range grp.Groups.Groups {
@@ -41,16 +42,21 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			if group.State == "Stable" {
 				state = 1
 			}
-			ch <- prometheus.MustNewConstMetric(
-				e.consumerGroupInfo,
-				prometheus.GaugeValue,
-				float64(state),
-				group.Group,
-				group.Protocol,
-				group.ProtocolType,
-				group.State,
-				strconv.FormatInt(int64(coordinator), 10),
-			)
+			if group.State != "Empty" {
+				// don't report on empty groups
+				ch <- prometheus.MustNewConstMetric(
+					e.consumerGroupInfo,
+					prometheus.GaugeValue,
+					float64(state),
+					group.Group,
+					group.Protocol,
+					group.ProtocolType,
+					group.State,
+					strconv.FormatInt(int64(coordinator), 10),
+				)
+			} else {
+				emptyGroups++
+			}
 
 			// total number of members in consumer groups
 			if len(group.Members) > 0 {
@@ -140,6 +146,11 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			}
 		}
 	}
+	ch <- prometheus.MustNewConstMetric(
+		e.consumerGroupInfoEmptyGroups,
+		prometheus.GaugeValue,
+		float64(emptyGroups),
+	)
 	return true
 }
 
