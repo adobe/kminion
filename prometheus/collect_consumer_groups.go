@@ -53,12 +53,14 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			)
 
 			// total number of members in consumer groups
-			ch <- prometheus.MustNewConstMetric(
-				e.consumerGroupMembers,
-				prometheus.GaugeValue,
-				float64(len(group.Members)),
-				group.Group,
-			)
+			if len(group.Members) > 0 {
+				ch <- prometheus.MustNewConstMetric(
+					e.consumerGroupMembers,
+					prometheus.GaugeValue,
+					float64(len(group.Members)),
+					group.Group,
+				)
+			}
 
 			// iterate all members and build two maps:
 			// - {topic -> number-of-consumers}
@@ -108,7 +110,7 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			}
 
 			// number of members with no assignment in a stable consumer group
-			if membersWithEmptyAssignment > 0 {
+			if membersWithEmptyAssignment > 0 && group.State == "Stable" {
 				ch <- prometheus.MustNewConstMetric(
 					e.consumerGroupMembersEmpty,
 					prometheus.GaugeValue,
