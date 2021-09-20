@@ -79,6 +79,38 @@ func (e *Exporter) collectTopicInfo(ctx context.Context, ch chan<- prometheus.Me
 			float64(1),
 			labelsValues...,
 		)
+		ch <- prometheus.MustNewConstMetric(
+			e.topicInfoPartitionsCount,
+			prometheus.GaugeValue,
+			float64(partitionCount),
+			*topic.Topic,
+		)
+		ch <- prometheus.MustNewConstMetric(
+			e.topicInfoReplicationFactor,
+			prometheus.GaugeValue,
+			float64(replicationFactor),
+			*topic.Topic,
+		)
+		if parameter, exists := configsByTopic[*topic.Topic]["min.insync.replicas"]; exists {
+			if value, err := strconv.ParseFloat(parameter, 64); err == nil {
+				ch <- prometheus.MustNewConstMetric(
+					e.topicInfoMinInsyncReplicas,
+					prometheus.GaugeValue,
+					value,
+					*topic.Topic,
+				)
+			}
+		}
+		if parameter, exists := configsByTopic[*topic.Topic]["retention.ms"]; exists {
+			if value, err := strconv.ParseFloat(parameter, 64); err == nil {
+				ch <- prometheus.MustNewConstMetric(
+					e.topicInfoRetentionMs,
+					prometheus.GaugeValue,
+					value,
+					*topic.Topic,
+				)
+			}
+		}
 	}
 	return isOk
 }
