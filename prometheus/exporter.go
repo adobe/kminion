@@ -44,6 +44,7 @@ type Exporter struct {
 
 	// Consumer Groups
 	consumerGroupInfo                    *prometheus.Desc
+	consumerGroupInfoEmptyGroups         *prometheus.Desc
 	consumerGroupMembers                 *prometheus.Desc
 	consumerGroupMembersEmpty            *prometheus.Desc
 	consumerGroupTopicMembers            *prometheus.Desc
@@ -177,6 +178,13 @@ func (e *Exporter) InitializeMetrics() {
 		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "consumer_group_info"),
 		"Consumer Group info metrics. It will report 1 if the group is in the stable state, otherwise 0.",
 		[]string{"group_id", "protocol", "protocol_type", "state", "coordinator_id"},
+		nil,
+	)
+	// Group Info - Empty Groups
+	e.consumerGroupInfoEmptyGroups = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "consumer_group_info_empty_groups"),
+		"Consumer Group info metrics. It will report the number of empty groups overall in cluster.",
+		nil,
 		nil,
 	)
 	// Group Members
