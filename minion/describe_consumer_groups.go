@@ -17,8 +17,7 @@ type DescribeConsumerGroupsResponse struct {
 }
 
 func (s *Service) listConsumerGroupsCached(ctx context.Context) (*kmsg.ListGroupsResponse, error) {
-	reqId := ctx.Value("requestId").(string)
-	key := "list-consumer-groups-" + reqId
+	key := "list-consumer-groups"
 
 	if cachedRes, exists := s.getCachedItem(key); exists {
 		return cachedRes.(*kmsg.ListGroupsResponse), nil
