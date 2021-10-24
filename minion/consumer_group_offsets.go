@@ -24,7 +24,9 @@ func (s *Service) ListAllConsumerGroupOffsetsAdminAPI(ctx context.Context) (map[
 	}
 	groupIDs := make([]string, len(groupsRes.AllowedGroups.Groups))
 	for i, group := range groupsRes.AllowedGroups.Groups {
-		groupIDs[i] = group.Group
+		if group.GroupState != "Dead" {
+			groupIDs[i] = group.Group
+		}
 	}
 
 	return s.listConsumerGroupOffsetsBulk(ctx, groupIDs)
