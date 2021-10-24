@@ -16,13 +16,18 @@ type DescribeConsumerGroupsResponse struct {
 	Groups         *kmsg.DescribeGroupsResponse
 }
 
-func (s *Service) listConsumerGroupsCached(ctx context.Context) (*kmsg.ListGroupsResponse, error) {
-	key := "list-consumer-groups"
+type GroupsInfo struct {
+	AllowedGroups  *kmsg.ListGroupsResponse
+	AllGroupsCount int
+}
 
-	if cachedRes, exists := s.getCachedItem(key); exists {
-		return cachedRes.(*kmsg.ListGroupsResponse), nil
+func (s *Service) listConsumerGroupsCached(ctx context.Context) (*GroupsInfo, error) {
+	keyAllowedGroups := "list-consumer-groups"
+
+	if cachedRes, exists := s.getCachedItem(keyAllowedGroups); exists {
+		return cachedRes.(*GroupsInfo), nil
 	}
-	res, err, _ := s.requestGroup.Do(key, func() (interface{}, error) {
+	groups, err, _ := s.requestGroup.Do(keyAllowedGroups, func() (interface{}, error) {
 		res, err := s.listConsumerGroups(ctx)
 		if err != nil {
 			return nil, err
@@ -34,15 +39,19 @@ func (s *Service) listConsumerGroupsCached(ctx context.Context) (*kmsg.ListGroup
 			}
 		}
 		res.Groups = allowedGroups
-		s.setCachedItem(key, res, 120*time.Second)
+		groups := &GroupsInfo{
+			AllGroupsCount: len(res.Groups),
+			AllowedGroups:  res,
+		}
+		s.setCachedItem(keyAllowedGroups, groups, 120*time.Second)
 
-		return res, nil
+		return groups, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return res.(*kmsg.ListGroupsResponse), nil
+	return groups.(*GroupsInfo), nil
 }
 
 func (s *Service) listConsumerGroups(ctx context.Context) (*kmsg.ListGroupsResponse, error) {
@@ -59,14 +68,14 @@ func (s *Service) listConsumerGroups(ctx context.Context) (*kmsg.ListGroupsRespo
 	return res, nil
 }
 
-func (s *Service) DescribeConsumerGroups(ctx context.Context) ([]DescribeConsumerGroupsResponse, error) {
+func (s *Service) DescribeConsumerGroups(ctx context.Context) ([]DescribeConsumerGroupsResponse, int, error) {
 	listRes, err := s.listConsumerGroupsCached(ctx)
 	if err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 
-	groupIDs := make([]string, len(listRes.Groups))
-	for i, group := range listRes.Groups {
+	groupIDs := make([]string, len(listRes.AllowedGroups.Groups))
+	for i, group := range listRes.AllowedGroups.Groups {
 		groupIDs[i] = group.Group
 	}
 
@@ -90,6 +99,5 @@ func (s *Service) DescribeConsumerGroups(ctx context.Context) ([]DescribeConsume
 			Groups:         res,
 		})
 	}
-
-	return describedGroups, nil
+	return describedGroups, listRes.AllGroupsCount, nil
 }

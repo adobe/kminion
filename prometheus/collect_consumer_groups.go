@@ -15,7 +15,7 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 	if !e.minionSvc.Cfg.ConsumerGroups.Enabled {
 		return true
 	}
-	groups, err := e.minionSvc.DescribeConsumerGroups(ctx)
+	groups, allGroups, err := e.minionSvc.DescribeConsumerGroups(ctx)
 	if err != nil {
 		e.logger.Error("failed to collect consumer groups, because Kafka request failed", zap.Error(err))
 		return false
@@ -143,6 +143,11 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			}
 		}
 	}
+	ch <- prometheus.MustNewConstMetric(
+		e.consumerGroupInfoAllGroups,
+		prometheus.GaugeValue,
+		float64(allGroups),
+	)
 	ch <- prometheus.MustNewConstMetric(
 		e.consumerGroupInfoEmptyGroups,
 		prometheus.GaugeValue,
