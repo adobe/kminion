@@ -5,7 +5,7 @@
 replicaCount: 1
 
 image:
-  repository: quay.io/cloudhut/kminion
+  repository: ghcr.io/adobe/kminion
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
@@ -34,8 +34,8 @@ podSecurityContext:
 
 ## See `kubectl explain poddisruptionbudget.spec` for more
 ## ref: https://kubernetes.io/docs/tasks/run-application/configure-pdb/
-podDisruptionBudget:
-  maxUnavailable: 1
+podDisruptionBudget: {}
+  # maxUnavailable: 1
   # minAvailable: 1
 
 securityContext: {}
