@@ -3,6 +3,9 @@ kind: ConfigMap
 metadata:
   name: {{include "kminion.fullname" .}}
   namespace: {{ .Release.Namespace | quote }}
+  annotations:
+   strategy.spinnaker.io/versioned: "false"
+   strategy.spinnaker.io/replace: "true"
   labels:
     {{- include "kminion.labels" . | nindent 4}}
 data:
