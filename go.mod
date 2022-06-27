@@ -17,8 +17,9 @@ require (
 	github.com/twmb/franz-go/pkg/kmsg v1.9.0
 	github.com/twmb/franz-go/pkg/sasl/kerberos v1.1.0
 	go.uber.org/atomic v1.11.0
-	go.uber.org/zap v1.27.0
-	golang.org/x/sync v0.8.0
+	go.uber.org/automaxprocs v1.5.2
+	go.uber.org/zap v1.24.0
+	golang.org/x/sync v0.2.0
 )
 
 require (
