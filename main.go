@@ -17,6 +17,7 @@ import (
 	"github.com/cloudhut/kminion/v2/prometheus"
 	promclient "github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 )
 
@@ -43,14 +44,16 @@ func main() {
 	if err != nil {
 		startupLogger.Fatal("failed to parse config", zap.Error(err))
 	}
-
 	logger := logging.NewLogger(cfg.Logger, cfg.Exporter.Namespace).Named("main")
-	if err != nil {
-		startupLogger.Fatal("failed to create new logger", zap.Error(err))
-	}
-
 	logger.Info("started kminion", zap.String("version", version), zap.String("built_at", builtAt))
 
+	// set GOMAXPROCS automatically
+	l := func(format string, a ...interface{}) {
+		logger.Info(fmt.Sprintf(format, a...))
+	}
+	if _, err = maxprocs.Set(maxprocs.Logger(l)); err != nil {
+		logger.Fatal("failed to set GOMAXPROCS automatically", zap.Error(err))
+	}
 	// Setup context that stops when the application receives an interrupt signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
