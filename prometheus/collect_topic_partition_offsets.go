@@ -30,7 +30,7 @@ func (e *Exporter) collectTopicPartitionOffsets(ctx context.Context, ch chan<- p
 	// In older versions this is returning the timestamp of the low watermarks (earliest offset)
 	maxTimestampOffsets, err := e.minionSvc.ListOffsetsCached(ctx, -3)
 	if err != nil {
-		e.logger.Warn("failed to fetch offsets for max timestamp", zap.Error(err))
+		e.logger.Error("failed to fetch offsets for max timestamp", zap.Error(err))
 		return false
 	}
 
