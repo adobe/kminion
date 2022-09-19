@@ -41,6 +41,8 @@ type Exporter struct {
 	partitionHighWaterMark     *prometheus.Desc
 	topicLowWaterMarkSum       *prometheus.Desc
 	partitionLowWaterMark      *prometheus.Desc
+	topicMaxTimestamp          *prometheus.Desc
+	partitionMaxTimestamp      *prometheus.Desc
 
 	// Consumer Groups
 	consumerGroupInfo                    *prometheus.Desc
@@ -169,6 +171,20 @@ func (e *Exporter) InitializeMetrics() {
 	e.topicHighWaterMarkSum = prometheus.NewDesc(
 		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_high_water_mark_sum"),
 		"Sum of all the topic's partition high water marks",
+		[]string{"topic_name"},
+		nil,
+	)
+	// Partition Max Timestamp
+	e.partitionMaxTimestamp = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_partition_max_timestamp"),
+		"Partition Max Timestamp",
+		[]string{"topic_name", "partition_id"},
+		nil,
+	)
+	// Topic Max Timestamp
+	e.topicMaxTimestamp = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_max_timestamp"),
+		"Topic Max Timestamp",
 		[]string{"topic_name"},
 		nil,
 	)

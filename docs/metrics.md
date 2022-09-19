@@ -62,6 +62,70 @@ kminion_kafka_topic_partition_high_water_mark{partition_id="0",topic_name="__con
 # HELP kminion_kafka_topic_high_water_mark_sum Sum of all the topic's partition high water marks
 # TYPE kminion_kafka_topic_high_water_mark_sum gauge
 kminion_kafka_topic_high_water_mark_sum{topic_name="__consumer_offsets"} 1.512023846873e+12
+
+# HELP kminion_kafka_topic_partition_max_timestamp Partition Max Timestamp - the timestamp (in milliseconds since epoch) of the record with the highest timestamp in the partition
+# TYPE kminion_kafka_topic_partition_max_timestamp gauge
+kminion_kafka_topic_partition_max_timestamp{partition_id="0",topic_name="my-topic"} 1.760616208802e+12
+
+# HELP kminion_kafka_topic_max_timestamp Topic Max Timestamp - the maximum timestamp across all partitions in the topic
+# TYPE kminion_kafka_topic_max_timestamp gauge
+kminion_kafka_topic_max_timestamp{topic_name="my-topic"} 1.760616208802e+12
+```
+
+#### Max Timestamp Metrics Usage
+
+The `max_timestamp` metrics (requires Kafka 3.0+) are useful for monitoring data freshness and producer health:
+
+**Alert on stale data / dead producers:**
+```promql
+# Alert if no new messages in last 5 minutes
+(time() * 1000 - kminion_kafka_topic_max_timestamp) / 1000 > 300
+```
+
+**Data freshness dashboard:**
+```promql
+# Age of newest message in seconds
+(time() * 1000 - kminion_kafka_topic_max_timestamp) / 1000
+
+# Show max age across all partitions per topic
+max by (topic_name) ((time() * 1000 - kminion_kafka_topic_partition_max_timestamp) / 1000)
+```
+
+**Detect partition skew:**
+```promql
+# Show difference between slowest and fastest partition per topic
+(max by (topic_name) (kminion_kafka_topic_partition_max_timestamp)
+ - min by (topic_name) (kminion_kafka_topic_partition_max_timestamp)) / 1000
+```
+
+**Distinguish producer vs consumer issues:**
+```promql
+# Consumer is behind on fresh data (consumer problem)
+kminion_kafka_consumer_group_topic_lag{topic_name="your-topic"} > 1000
+and
+(time() * 1000 - kminion_kafka_topic_max_timestamp{topic_name="your-topic"}) / 1000 < 60
+
+# No new data but consumer is caught up (producer problem)
+(time() * 1000 - kminion_kafka_topic_max_timestamp{topic_name="your-topic"}) / 1000 > 300
+and
+kminion_kafka_consumer_group_topic_lag{topic_name="your-topic"} < 10
+```
+
+**Identify inactive topics:**
+```promql
+# Topics with no data in last 7 days (candidates for deletion)
+(time() * 1000 - kminion_kafka_topic_max_timestamp) / 86400000 > 7
+```
+
+**SLA monitoring:**
+```promql
+# Percentage of topics meeting SLA (data < 10 min old)
+100 * count((time() * 1000 - kminion_kafka_topic_max_timestamp) / 1000 < 600)
+/ count(kminion_kafka_topic_max_timestamp)
+
+# Or per-partition SLA compliance
+100 * count((time() * 1000 - kminion_kafka_topic_partition_max_timestamp) / 1000 < 600)
+/ count(kminion_kafka_topic_partition_max_timestamp)
 ```
 
 ### Consumer Group Metrics
