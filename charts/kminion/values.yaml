@@ -28,9 +28,9 @@ podAnnotations: {}
 #  prometheus.io/port: "8080"
 #  prometheus.io/path: "/metrics"
 
-podSecurityContext:
-  runAsUser: 99
-  fsGroup: 99
+podSecurityContext: {}
+  # runAsUser: 99
+  # fsGroup: 99
 
 ## See `kubectl explain poddisruptionbudget.spec` for more
 ## ref: https://kubernetes.io/docs/tasks/run-application/configure-pdb/
