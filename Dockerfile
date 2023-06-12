@@ -30,8 +30,6 @@ RUN CGO_ENABLED=0 go build \
 FROM alpine:3.17
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/bin/kminion /app/kminion
-RUN chown -R 1001:0 /app/kminion \
-    && chmod -R g=u /app/kminion
-USER 1001
+RUN chmod -R +x /app/kminion
 
 ENTRYPOINT ["/app/kminion"]
