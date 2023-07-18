@@ -2,11 +2,12 @@ package prometheus
 
 import (
 	"context"
+	"strconv"
+
 	"github.com/cloudhut/kminion/v2/minion"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"go.uber.org/zap"
-	"strconv"
 )
 
 func (e *Exporter) collectTopicPartitionOffsets(ctx context.Context, ch chan<- prometheus.Metric) bool {

@@ -31,6 +31,10 @@ type ConsumerGroupConfig struct {
 	// IgnoredGroups are regex strings of group ids that shall be ignored/skipped when exporting metrics. Ignored groups
 	// take precedence over allowed groups.
 	IgnoredGroupIDs []string `koanf:"ignoredGroups"`
+
+	// Monitor consumer group states. Empty list means all consumer groups are monitoring regardless of its state
+	// Allowed values are: Dead, Empty, Stable, AwaitingSync, PreparingRebalance, CompletingRebalance
+	ConsumerGroupStates []string `koanf:"consumerGroupStates"`
 }
 
 func (c *ConsumerGroupConfig) SetDefaults() {
