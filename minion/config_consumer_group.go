@@ -34,7 +34,7 @@ type ConsumerGroupConfig struct {
 
 	// Monitor consumer group states. Empty list means all consumer groups are monitoring regardless of its state
 	// Allowed values are: Dead, Empty, Stable, AwaitingSync, PreparingRebalance, CompletingRebalance
-	ConsumerGroupStates []string `koanf:"consumerGroupStates"`
+	AllowedConsumerGroupStates []string `koanf:"allowedConsumerGroupStates"`
 }
 
 func (c *ConsumerGroupConfig) SetDefaults() {
