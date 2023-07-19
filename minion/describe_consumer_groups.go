@@ -27,15 +27,28 @@ func (s *Service) listConsumerGroupsCached(ctx context.Context) (*GroupsInfo, er
 	if cachedRes, exists := s.getCachedItem(keyAllowedGroups); exists {
 		return cachedRes.(*GroupsInfo), nil
 	}
+
 	groups, err, _ := s.requestGroup.Do(keyAllowedGroups, func() (interface{}, error) {
 		res, err := s.listConsumerGroups(ctx)
 		if err != nil {
 			return nil, err
 		}
+		// only add group if it maches regex and its state is allowed
 		allowedGroups := make([]kmsg.ListGroupsResponseGroup, 0)
+		allowedGroupsStates := make(map[string]string, len(s.Cfg.ConsumerGroups.AllowedConsumerGroupStates))
+		for _, state := range s.Cfg.ConsumerGroups.AllowedConsumerGroupStates {
+			allowedGroupsStates[state] = state
+		}
+
 		for i := range res.Groups {
 			if s.IsGroupAllowed(res.Groups[i].Group) {
-				allowedGroups = append(allowedGroups, res.Groups[i])
+				if len(s.Cfg.ConsumerGroups.AllowedConsumerGroupStates) > 0 {
+					if allowedGroupsStates[res.Groups[i].GroupState] != "" {
+						allowedGroups = append(allowedGroups, res.Groups[i])
+					}
+				} else {
+					allowedGroups = append(allowedGroups, res.Groups[i])
+				}
 			}
 		}
 		res.Groups = allowedGroups
