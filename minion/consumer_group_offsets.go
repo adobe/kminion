@@ -23,14 +23,10 @@ func (s *Service) ListAllConsumerGroupOffsetsAdminAPI(ctx context.Context) (map[
 		return nil, fmt.Errorf("failed to list groupsRes: %w", err)
 	}
 	groupIDs := make([]string, len(groupsRes.AllowedGroups.Groups))
-	// create a map for faster lookup
-	groupStatesMap := make(map[string]string, len(s.Cfg.ConsumerGroups.AllowedConsumerGroupStates))
-	for _, state := range s.Cfg.ConsumerGroups.AllowedConsumerGroupStates {
-		groupStatesMap[state] = state
-	}
+	groupStatesMap := s.Cfg.ConsumerGroups.GetAllowedConsumerGroupStates()
 
 	for i, group := range groupsRes.AllowedGroups.Groups {
-		if len(s.Cfg.ConsumerGroups.AllowedConsumerGroupStates) == 0 {
+		if len(groupStatesMap) == 0 {
 			groupIDs[i] = group.Group
 		} else {
 			// only add group if it's state is allowed

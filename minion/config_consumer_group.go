@@ -80,3 +80,13 @@ func (c *ConsumerGroupConfig) Validate() error {
 
 	return nil
 }
+
+// Returns a map of allowed group states for faster lookup
+func (c *ConsumerGroupConfig) GetAllowedConsumerGroupStates() map[string]string {
+	// create a map for faster lookup
+	groupStatesMap := make(map[string]string, len(c.AllowedConsumerGroupStates))
+	for _, state := range c.AllowedConsumerGroupStates {
+		groupStatesMap[state] = state
+	}
+	return groupStatesMap
+}
