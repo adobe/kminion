@@ -33,7 +33,8 @@ type ConsumerGroupConfig struct {
 	IgnoredGroupIDs []string `koanf:"ignoredGroups"`
 
 	// Monitor consumer group states. Empty list means all consumer groups are monitoring regardless of its state
-	// Allowed values are: Dead, Empty, Stable, AwaitingSync, PreparingRebalance, CompletingRebalance
+	// Allowed values are: Dead, Empty, Stable, PreparingRebalance, CompletingRebalance
+	// Source: https://github.com/apache/kafka/blob/3.4/core/src/main/scala/kafka/coordinator/group/GroupMetadata.scala
 	AllowedConsumerGroupStates []string `koanf:"allowedConsumerGroupStates"`
 }
 
