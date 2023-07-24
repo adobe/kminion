@@ -31,6 +31,11 @@ type ConsumerGroupConfig struct {
 	// IgnoredGroups are regex strings of group ids that shall be ignored/skipped when exporting metrics. Ignored groups
 	// take precedence over allowed groups.
 	IgnoredGroupIDs []string `koanf:"ignoredGroups"`
+
+	// Monitor consumer group states. Empty list means all consumer groups are monitoring regardless of its state
+	// Allowed values are: Dead, Empty, Stable, PreparingRebalance, CompletingRebalance
+	// Source: https://github.com/apache/kafka/blob/3.4/core/src/main/scala/kafka/coordinator/group/GroupMetadata.scala
+	AllowedConsumerGroupStates []string `koanf:"allowedConsumerGroupStates"`
 }
 
 func (c *ConsumerGroupConfig) SetDefaults() {
@@ -75,4 +80,14 @@ func (c *ConsumerGroupConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// Returns a map of allowed group states for faster lookup
+func (c *ConsumerGroupConfig) GetAllowedConsumerGroupStates() map[string]string {
+	// create a map for faster lookup
+	groupStatesMap := make(map[string]string, len(c.AllowedConsumerGroupStates))
+	for _, state := range c.AllowedConsumerGroupStates {
+		groupStatesMap[state] = state
+	}
+	return groupStatesMap
 }
