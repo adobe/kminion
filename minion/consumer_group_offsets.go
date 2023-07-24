@@ -23,10 +23,9 @@ func (s *Service) ListAllConsumerGroupOffsetsAdminAPI(ctx context.Context) (map[
 		return nil, fmt.Errorf("failed to list groupsRes: %w", err)
 	}
 	groupIDs := make([]string, len(groupsRes.AllowedGroups.Groups))
+
 	for i, group := range groupsRes.AllowedGroups.Groups {
-		if group.GroupState != "Dead" {
-			groupIDs[i] = group.Group
-		}
+		groupIDs[i] = group.Group
 	}
 
 	return s.listConsumerGroupOffsetsBulk(ctx, groupIDs)
