@@ -2,11 +2,12 @@ package prometheus
 
 import (
 	"context"
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"go.uber.org/zap"
-	"strconv"
 )
 
 func (e *Exporter) collectLogDirs(ctx context.Context, ch chan<- prometheus.Metric) bool {

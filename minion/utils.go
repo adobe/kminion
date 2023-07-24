@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func (s *Service) IsGroupAllowed(groupName string) bool {
+func (s *Service) IsGroupAllowed(groupName string, groupState string) bool {
 	isAllowed := false
 	for _, regex := range s.AllowedGroupIDsExpr {
 		if regex.MatchString(groupName) {
@@ -19,6 +19,15 @@ func (s *Service) IsGroupAllowed(groupName string) bool {
 		if regex.MatchString(groupName) {
 			isAllowed = false
 			break
+		}
+	}
+
+	if isAllowed && groupState != "" {
+		groupStatesMap := s.Cfg.ConsumerGroups.GetAllowedConsumerGroupStates()
+		if len(groupStatesMap) > 0 {
+			if _, ok := groupStatesMap[groupState]; !ok {
+				isAllowed = false
+			}
 		}
 	}
 	return isAllowed

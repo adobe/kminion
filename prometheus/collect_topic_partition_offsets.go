@@ -4,10 +4,9 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/cloudhut/kminion/v2/minion"
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
-
-	"github.com/cloudhut/kminion/v2/minion"
 )
 
 func (e *Exporter) collectTopicPartitionOffsets(ctx context.Context, ch chan<- prometheus.Metric) bool {
