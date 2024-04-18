@@ -108,6 +108,18 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 			}.AsMechanism()
 			opts = append(opts, kgo.SASL(kerberosMechanism))
 		}
+
+		if cfg.SASL.Mechanism == SASLMechanismOAuthBearer {
+			var opt *kgo.Opt
+			switch cfg.SASL.OAUTHBEARER.Type {
+			case AdobeOAUTH:
+				bearer := NewAdobeOAUTHBearer(cfg.SASL.OAUTHBEARER.AdobeIMS)
+				opt, _ = bearer.Opt()
+			default:
+				return nil, fmt.Errorf("unknown oauthbearer type '%v'", cfg.SASL.OAUTHBEARER.Type)
+			}
+			opts = append(opts, opt)
+		}
 	}
 
 	// Configure TLS
