@@ -20,6 +20,9 @@ type waterMark struct {
 }
 
 func (e *Exporter) collectConsumerGroupLags(ctx context.Context, ch chan<- prometheus.Metric) bool {
+	if !e.minionSvc.Cfg.ConsumerGroups.Enabled {
+		return true
+	}
 	// Low Watermarks (at the moment they are not needed at all, they could be used to calculate the lag on partitions
 	// that don't have any active offsets)
 	lowWaterMarks, err := e.minionSvc.ListOffsetsCached(ctx, -2)

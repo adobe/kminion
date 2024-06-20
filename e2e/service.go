@@ -18,8 +18,10 @@ type Service struct {
 	config Config
 	logger *zap.Logger
 
-	kafkaSvc *kafka.Service // creates kafka client for us
-	client   *kgo.Client
+	kafkaSvc    *kafka.Service // creates kafka client for us
+	client      *kgo.Client
+	adminClient *kgo.Client
+	kgoOpts     []kgo.Opt
 
 	// Service
 	minionID       string          // unique identifier, reported in metrics, in case multiple instances run at the same time
@@ -57,6 +59,7 @@ func NewService(ctx context.Context, cfg Config, logger *zap.Logger, kafkaSvc *k
 		kgoOpts = append(kgoOpts, kgo.DisableIdempotentWrite())
 	}
 	kgoOpts = append(kgoOpts, kgo.ProduceRequestTimeout(3*time.Second))
+	kgoOpts = append(kgoOpts, kgo.ClientID("kminion"))
 
 	// Consumer configs
 	kgoOpts = append(kgoOpts,
@@ -64,7 +67,9 @@ func NewService(ctx context.Context, cfg Config, logger *zap.Logger, kafkaSvc *k
 		kgo.ConsumeTopics(cfg.TopicManagement.Name),
 		kgo.Balancers(kgo.CooperativeStickyBalancer()),
 		kgo.DisableAutoCommit(),
-		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()))
+		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
+		kgo.InstanceID(groupID),
+	)
 
 	// Prepare hooks
 	hooks := newEndToEndClientHooks(logger)
@@ -73,28 +78,16 @@ func NewService(ctx context.Context, cfg Config, logger *zap.Logger, kafkaSvc *k
 	// We use the manual partitioner so that the records' partition id will be used as target partition
 	kgoOpts = append(kgoOpts, kgo.RecordPartitioner(kgo.ManualPartitioner()))
 
-	// Create kafka service and check if client can successfully connect to Kafka cluster
-	logger.Info("connecting to Kafka seed brokers, trying to fetch cluster metadata",
-		zap.String("seed_brokers", strings.Join(kafkaSvc.Brokers(), ",")))
-	client, err := kafkaSvc.CreateAndTestClient(ctx, logger, kgoOpts)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create kafka client for e2e: %w", err)
-	}
-	logger.Info("successfully connected to kafka cluster")
-
 	svc := &Service{
 		config:   cfg,
 		logger:   logger.Named("e2e"),
 		kafkaSvc: kafkaSvc,
-		client:   client,
+		kgoOpts:  kgoOpts,
 
 		minionID:    minionID,
 		groupId:     groupID,
 		clientHooks: hooks,
 	}
-
-	svc.groupTracker = newGroupTracker(cfg, logger, client, groupID)
-	svc.messageTracker = newMessageTracker(svc)
 
 	makeCounterVec := func(name string, labelNames []string, help string) *prometheus.CounterVec {
 		cv := prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -145,23 +138,85 @@ func NewService(ctx context.Context, cfg Config, logger *zap.Logger, kafkaSvc *k
 	return svc, nil
 }
 
-// Start starts the service (wow)
-func (s *Service) Start(ctx context.Context) error {
+func (s *Service) initKafka(ctx context.Context) error {
+	// Create kafka service and check if client can successfully connect to Kafka cluster
+	s.logger.Info("connecting to Kafka seed brokers, trying to fetch cluster metadata",
+		zap.String("seed_brokers", strings.Join(s.kafkaSvc.Brokers(), ",")))
+	client, err := s.kafkaSvc.CreateAndTestClient(ctx, s.logger, s.kgoOpts)
+	if err != nil {
+		return fmt.Errorf("failed to create kafka client for e2e: %w", err)
+	}
+	s.logger.Info("successfully connected to kafka cluster")
+
+	s.client = client
+	s.groupTracker = newGroupTracker(s.config, s.logger, client, s.groupId)
+	s.messageTracker = newMessageTracker(s)
+
+	return nil
+}
+
+func (s *Service) initReconcile(ctx context.Context) error {
+	s.logger.Info("Starting reconcile")
+	// Create the KafkaAdmin client used for topic partition and leader reconciliation
+	adminClient, err := s.kafkaSvc.CreateAndTestClient(ctx, s.logger, []kgo.Opt{})
+	if err != nil {
+		return fmt.Errorf("failed to create kafka client for e2e: %w", err)
+	}
+
+	s.adminClient = adminClient
+
 	// Ensure topic exists and is configured correctly
 	if err := s.validateManagementTopic(ctx); err != nil {
 		return fmt.Errorf("could not validate end-to-end topic: %w", err)
 	}
 
-	// Get up-to-date metadata and inform our custom partitioner about the partition count
-	topicMetadata, err := s.getTopicMetadata(ctx)
-	if err != nil {
-		return fmt.Errorf("could not get topic metadata after validation: %w", err)
-	}
-	partitions := len(topicMetadata.Topics[0].Partitions)
-	s.partitionCount = partitions
-
-	// finally start everything else (producing, consuming, continuous validation, consumer group tracking)
+	// start topic creation/partition/leader reconciliation loop
 	go s.startReconciliation(ctx)
+
+	return nil
+}
+
+// Start starts the service (wow)
+func (s *Service) Start(ctx context.Context) error {
+	if err := s.initReconcile(ctx); err != nil {
+		return err
+	}
+	if s.config.ReconnectInterval > 0*time.Second {
+		go s.reconnectLoop(ctx)
+	} else {
+		if err := s.run(ctx); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+// Stop stops the service
+func (s *Service) Stop() {
+	s.logger.Info("Stopping e2e service")
+	s.client.Close()
+}
+
+func (s *Service) reconnectLoop(pctx context.Context) {
+	for {
+		ctx, _ := context.WithTimeout(pctx, s.config.ReconnectInterval)
+		s.run(ctx)
+		select {
+		case <-ctx.Done():
+			s.Stop()
+			fmt.Println("Restarting e2e service")
+		case <-pctx.Done():
+			s.Stop()
+			return
+		}
+	}
+}
+
+func (s *Service) run(ctx context.Context) error {
+	if err := s.initKafka(ctx); err != nil {
+		return err
+	}
 
 	// Start consumer and wait until we've received a response for the first poll which would indicate that the
 	// consumer is ready. Only if the consumer is ready we want to start the producer to ensure that we will not

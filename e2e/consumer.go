@@ -13,23 +13,32 @@ import (
 
 func (s *Service) startConsumeMessages(ctx context.Context, initializedCh chan<- bool) {
 	client := s.client
+	logger := s.logger.Named("consumer")
 
-	s.logger.Info("Starting to consume end-to-end topic",
+	logger.Info("Starting to consume end-to-end topic",
 		zap.String("topic_name", s.config.TopicManagement.Name),
 		zap.String("group_id", s.groupId))
 
 	isInitialized := false
 	for {
+		if ctx.Err() != nil {
+			break
+		}
 		fetches := client.PollFetches(ctx)
 		if !isInitialized {
 			isInitialized = true
 			initializedCh <- true
 		}
 
+		if fetches == nil {
+			break
+		}
+
+		logger.Debug("fetching messages", zap.Any("fetches", fetches))
 		// Log all errors and continue afterwards as we might get errors and still have some fetch results
 		errors := fetches.Errors()
 		for _, err := range errors {
-			s.logger.Error("kafka fetch error",
+			logger.Error("kafka fetch error",
 				zap.String("topic", err.Topic),
 				zap.Int32("partition", err.Partition),
 				zap.Error(err.Err))
@@ -37,6 +46,9 @@ func (s *Service) startConsumeMessages(ctx context.Context, initializedCh chan<-
 
 		fetches.EachRecord(s.processMessage)
 	}
+
+	client.LeaveGroup()
+	logger.Info("Consumer thread exited")
 }
 
 func (s *Service) commitOffsets(ctx context.Context) {
@@ -75,6 +87,8 @@ func (s *Service) commitOffsets(ctx context.Context) {
 // - checks if it is from us, or from another kminion process running somewhere else
 // - hands it off to the service, which then reports metrics on it
 func (s *Service) processMessage(record *kgo.Record) {
+	logger := s.logger.Named("consumer")
+
 	if record.Value == nil {
 		// Init messages have nil values - we want to skip these. They are only used to make sure a consumer is ready.
 		return
@@ -82,7 +96,7 @@ func (s *Service) processMessage(record *kgo.Record) {
 
 	var msg EndToEndMessage
 	if jerr := json.Unmarshal(record.Value, &msg); jerr != nil {
-		s.logger.Error("failed to unmarshal message value", zap.Error(jerr))
+		logger.Error("failed to unmarshal message value", zap.Error(jerr))
 		return // maybe older version
 	}
 

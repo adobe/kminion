@@ -13,14 +13,18 @@ import (
 
 // Check our end-to-end test topic and adapt accordingly if something does not match our expectations.
 // - does it exist?
+//   - does configuration allow topic management?
+//
 // - is it configured correctly?
-//     - does it have enough partitions?
-//     - is the replicationFactor correct?
+//   - does it have enough partitions?
+//   - is the replicationFactor correct?
+//
 // - are assignments good?
-//     - is each broker leading at least one partition?
-//     - are replicas distributed correctly?
+//   - is each broker leading at least one partition?
+//   - are replicas distributed correctly?
 func (s *Service) validateManagementTopic(ctx context.Context) error {
-	s.logger.Debug("validating end-to-end topic...")
+	logger := s.logger.Named("ManagementTopic")
+	logger.Info("validating end-to-end topic...")
 
 	meta, err := s.getTopicMetadata(ctx)
 	if err != nil {
@@ -35,6 +39,10 @@ func (s *Service) validateManagementTopic(ctx context.Context) error {
 	case kerr.UnknownTopicOrPartition:
 		// UnknownTopicOrPartition (Error code 3) means that the topic does not exist.
 		// When the topic doesn't exist, continue to create it further down in the code.
+		if !s.config.TopicManagement.Enabled {
+			return fmt.Errorf("the configured end to end topic does not exist. The topic will not be created " +
+				"because topic management is disabled")
+		}
 		topicExists = false
 	default:
 		// If the topic (possibly) exists, but there's an error, then this should result in a fail
@@ -43,17 +51,16 @@ func (s *Service) validateManagementTopic(ctx context.Context) error {
 
 	// Create topic if it doesn't exist
 	if !topicExists {
-		if !s.config.TopicManagement.Enabled {
-			return fmt.Errorf("the configured end to end topic does not exist. The topic will not be created " +
-				"because topic management is disabled")
-		}
-
 		if err = s.createManagementTopic(ctx, meta); err != nil {
 			return err
 		}
+		meta, err = s.getTopicMetadata(ctx)
+		if err != nil {
+			return fmt.Errorf("could not get topic metadata after validation: %w", err)
+		}
 	}
 
-	alterReq, createReq, err := s.calculatePartitionReassignments(meta)
+	alterReq, createReq, pleReq, err := s.calculatePartitionReassignments(meta)
 	if err != nil {
 		return fmt.Errorf("failed to calculate partition reassignments: %w", err)
 	}
@@ -68,6 +75,35 @@ func (s *Service) validateManagementTopic(ctx context.Context) error {
 		return fmt.Errorf("failed to create partitions: %w", err)
 	}
 
+	err = s.executeLeaderElection(ctx, pleReq)
+	if err != nil {
+		return fmt.Errorf("failed to elect partitions: %w", err)
+	}
+
+	logger.Info("end-to-end topic is valid.")
+
+	return nil
+}
+
+func (s *Service) executeLeaderElection(ctx context.Context, req *kmsg.ElectLeadersRequest) error {
+	if req == nil {
+		return nil
+	}
+
+	res, err := req.RequestWith(ctx, s.adminClient)
+	if err != nil {
+		return err
+	}
+
+	for _, topic := range res.Topics {
+		for _, partition := range topic.Partitions {
+			typedErr := kerr.TypedErrorForCode(partition.ErrorCode)
+			if typedErr != nil {
+				return fmt.Errorf("inner Kafka error: %w", typedErr)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -76,7 +112,7 @@ func (s *Service) executeCreatePartitions(ctx context.Context, req *kmsg.CreateP
 		return nil
 	}
 
-	res, err := req.RequestWith(ctx, s.client)
+	res, err := req.RequestWith(ctx, s.adminClient)
 	if err != nil {
 		return err
 	}
@@ -84,7 +120,7 @@ func (s *Service) executeCreatePartitions(ctx context.Context, req *kmsg.CreateP
 	for _, topic := range res.Topics {
 		typedErr := kerr.TypedErrorForCode(topic.ErrorCode)
 		if typedErr != nil {
-			return fmt.Errorf("inner Kafka error: %w", err)
+			return fmt.Errorf("inner Kafka error: %w", typedErr)
 		}
 	}
 
@@ -96,20 +132,20 @@ func (s *Service) executeAlterPartitionAssignments(ctx context.Context, req *kms
 		return nil
 	}
 
-	res, err := req.RequestWith(ctx, s.client)
+	res, err := req.RequestWith(ctx, s.adminClient)
 	if err != nil {
 		return err
 	}
 
 	typedErr := kerr.TypedErrorForCode(res.ErrorCode)
 	if typedErr != nil {
-		return fmt.Errorf("inner Kafka error: %w", err)
+		return fmt.Errorf("inner Kafka error: %w", typedErr)
 	}
 	for _, topic := range res.Topics {
 		for _, partition := range topic.Partitions {
 			typedErr = kerr.TypedErrorForCode(partition.ErrorCode)
 			if typedErr != nil {
-				return fmt.Errorf("inner Kafka partition error on partition '%v': %w", partition.Partition, err)
+				return fmt.Errorf("inner Kafka partition error on partition '%v': %w", partition.Partition, typedErr)
 			}
 		}
 	}
@@ -117,19 +153,28 @@ func (s *Service) executeAlterPartitionAssignments(ctx context.Context, req *kms
 	return nil
 }
 
-func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (*kmsg.AlterPartitionAssignmentsRequest, *kmsg.CreatePartitionsRequest, error) {
+func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (*kmsg.AlterPartitionAssignmentsRequest, *kmsg.CreatePartitionsRequest, *kmsg.ElectLeadersRequest, error) {
 	brokerByID := brokerMetadataByBrokerID(meta.Brokers)
 	topicMeta := meta.Topics[0]
 	desiredReplicationFactor := s.config.TopicManagement.ReplicationFactor
+	desiredPartitionsPerBroker := s.config.TopicManagement.PartitionsPerBroker
 
 	if desiredReplicationFactor > len(brokerByID) {
-		return nil, nil, fmt.Errorf("the desired replication factor of '%v' is larger than the available brokers "+
+		return nil, nil, nil, fmt.Errorf("the desired replication factor of '%v' is larger than the available brokers "+
 			"('%v' brokers)", desiredReplicationFactor, len(brokerByID))
+	}
+
+	partitionLeaderElections := []int32{}
+	for _, partition := range topicMeta.Partitions {
+		if partition.Replicas[0] != partition.Leader {
+			partitionLeaderElections = append(partitionLeaderElections, partition.Partition)
+		}
 	}
 
 	// We want to ensure that each brokerID leads at least one partition permanently. Hence let's iterate over brokers.
 	preferredLeaderPartitionsBrokerID := make(map[int32][]kmsg.MetadataResponseTopicPartition)
 	for _, broker := range brokerByID {
+		preferredLeaderPartitionsBrokerID[broker.NodeID] = []kmsg.MetadataResponseTopicPartition{}
 		for _, partition := range topicMeta.Partitions {
 			// PreferredLeader = BrokerID of the brokerID that is the desired leader. Regardless who the current leader is
 			preferredLeader := partition.Replicas[0]
@@ -139,11 +184,11 @@ func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (
 		}
 	}
 
-	// Partitions that use the same brokerID more than once as preferred leader can be reassigned to other brokers
+	// Partitions that use the same brokerID more than desiredPartitionsPerBroker as preferred leader can be reassigned to other brokers
 	// We collect them to avoid creating new partitions when not needed.
 	reassignablePartitions := make([]kmsg.MetadataResponseTopicPartition, 0)
 	for _, partitions := range preferredLeaderPartitionsBrokerID {
-		if len(partitions) > 1 {
+		if len(partitions) > desiredPartitionsPerBroker {
 			reassignablePartitions = append(reassignablePartitions, partitions[1:]...)
 			continue
 		}
@@ -155,7 +200,6 @@ func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (
 	partitionCount := len(topicMeta.Partitions)
 	partitionReassignments := make([]kmsg.AlterPartitionAssignmentsRequestTopicPartition, 0)
 	createPartitionAssignments := make([]kmsg.CreatePartitionsRequestTopicAssignment, 0)
-
 	for brokerID, partitions := range preferredLeaderPartitionsBrokerID {
 		// Add replicas if number of replicas is smaller than desiredReplicationFactor
 		for _, partition := range partitions {
@@ -168,7 +212,7 @@ func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (
 		}
 
 		// TODO: Consider more than one partition per broker config
-		if len(partitions) != 0 {
+		if len(partitions) >= desiredPartitionsPerBroker {
 			continue
 		}
 
@@ -183,11 +227,13 @@ func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (
 			reassignablePartitions = reassignablePartitions[1:]
 		}
 
-		// Create a new partition for this broker
-		partitionCount++
-		assignmentReq := kmsg.NewCreatePartitionsRequestTopicAssignment()
-		assignmentReq.Replicas = s.calculateAppropriateReplicas(meta, desiredReplicationFactor, brokerByID[brokerID])
-		createPartitionAssignments = append(createPartitionAssignments, assignmentReq)
+		// Create new partitions for this broker
+		for i := 0; i < desiredPartitionsPerBroker-len(partitions); i++ {
+			partitionCount++
+			assignmentReq := kmsg.NewCreatePartitionsRequestTopicAssignment()
+			assignmentReq.Replicas = s.calculateAppropriateReplicas(meta, desiredReplicationFactor, brokerByID[brokerID])
+			createPartitionAssignments = append(createPartitionAssignments, assignmentReq)
+		}
 	}
 
 	var reassignmentReq *kmsg.AlterPartitionAssignmentsRequest
@@ -195,7 +241,7 @@ func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (
 		s.logger.Info("e2e probe topic has to be modified due to missing replicas or wrong preferred leader assignments",
 			zap.Int("partition_count", len(topicMeta.Partitions)),
 			zap.Int("broker_count", len(meta.Brokers)),
-			zap.Int("config_partitions_per_broker", s.config.TopicManagement.PartitionsPerBroker),
+			zap.Int("config_partitions_per_broker", desiredPartitionsPerBroker),
 			zap.Int("config_replication_factor", s.config.TopicManagement.ReplicationFactor),
 			zap.Int("partitions_to_reassign", len(partitionReassignments)),
 		)
@@ -215,6 +261,7 @@ func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (
 			zap.Int("broker_count", len(meta.Brokers)),
 			zap.Int("config_partitions_per_broker", s.config.TopicManagement.PartitionsPerBroker),
 			zap.Int("partitions_to_add", len(createPartitionAssignments)),
+			zap.Any("partitions", createPartitionAssignments),
 		)
 		r := kmsg.NewCreatePartitionsRequest()
 		createPartitionsTopicReq := kmsg.NewCreatePartitionsRequestTopic()
@@ -225,7 +272,24 @@ func (s *Service) calculatePartitionReassignments(meta *kmsg.MetadataResponse) (
 		createReq = &r
 	}
 
-	return reassignmentReq, createReq, nil
+	var pleReq *kmsg.ElectLeadersRequest
+	if len(partitionLeaderElections) > 0 {
+		s.logger.Info("e2e probe topic leaders are not preferred",
+			zap.Int("partitions_to_elect", len(partitionLeaderElections)),
+		)
+		r := kmsg.NewElectLeadersRequest()
+		electLeadersRequestTopic := kmsg.NewElectLeadersRequestTopic()
+		electLeadersRequestTopic.Topic = s.config.TopicManagement.Name
+		electLeadersRequestTopic.Partitions = partitionLeaderElections
+		r.Topics = []kmsg.ElectLeadersRequestTopic{electLeadersRequestTopic}
+		r.ElectionType = 0 // preferred
+		pleReq = &r
+	}
+
+	// update partition count for e2e test
+	s.partitionCount = partitionCount
+
+	return reassignmentReq, createReq, pleReq, nil
 }
 
 // calculateAppropriateReplicas returns the best possible brokerIDs that shall be used as replicas.
@@ -299,7 +363,7 @@ func (s *Service) createManagementTopic(ctx context.Context, allMeta *kmsg.Metad
 	req := kmsg.NewCreateTopicsRequest()
 	req.Topics = []kmsg.CreateTopicsRequestTopic{topic}
 
-	res, err := req.RequestWith(ctx, s.client)
+	res, err := req.RequestWith(ctx, s.adminClient)
 	if err != nil {
 		return fmt.Errorf("failed to create e2e topic: %w", err)
 	}
@@ -320,7 +384,7 @@ func (s *Service) getTopicMetadata(ctx context.Context) (*kmsg.MetadataResponse,
 	req := kmsg.NewMetadataRequest()
 	req.Topics = []kmsg.MetadataRequestTopic{topicReq}
 
-	return req.RequestWith(ctx, s.client)
+	return req.RequestWith(ctx, s.adminClient)
 }
 
 func (s *Service) getTopicsConfigs(ctx context.Context, configNames []string) (*kmsg.DescribeConfigsResponse, error) {
@@ -335,7 +399,7 @@ func (s *Service) getTopicsConfigs(ctx context.Context, configNames []string) (*
 		},
 	}
 
-	return req.RequestWith(ctx, s.client)
+	return req.RequestWith(ctx, s.adminClient)
 }
 
 func createTopicConfig(cfgTopic EndToEndTopicConfig) []kmsg.CreateTopicsRequestTopicConfig {

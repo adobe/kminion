@@ -6,16 +6,18 @@ import (
 )
 
 type Config struct {
-	Enabled         bool                   `koanf:"enabled"`
-	TopicManagement EndToEndTopicConfig    `koanf:"topicManagement"`
-	ProbeInterval   time.Duration          `koanf:"probeInterval"`
-	Producer        EndToEndProducerConfig `koanf:"producer"`
-	Consumer        EndToEndConsumerConfig `koanf:"consumer"`
+	Enabled           bool                   `koanf:"enabled"`
+	TopicManagement   EndToEndTopicConfig    `koanf:"topicManagement"`
+	ProbeInterval     time.Duration          `koanf:"probeInterval"`
+	ReconnectInterval time.Duration          `koanf:"reconnectInterval"`
+	Producer          EndToEndProducerConfig `koanf:"producer"`
+	Consumer          EndToEndConsumerConfig `koanf:"consumer"`
 }
 
 func (c *Config) SetDefaults() {
 	c.Enabled = false
 	c.ProbeInterval = 100 * time.Millisecond
+	c.ReconnectInterval = 0 * time.Second
 	c.TopicManagement.SetDefaults()
 	c.Producer.SetDefaults()
 	c.Consumer.SetDefaults()

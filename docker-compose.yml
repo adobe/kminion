@@ -1,5 +1,5 @@
 ---
-version: '2.1'
+version: '3.9'
 
 services:
 
@@ -12,6 +12,8 @@ services:
       ZOOKEEPER_TICK_TIME: 2000
     container_name: zookeeper
     hostname: zookeeper
+    networks:
+      - kminion
 
   kafka:
     image: confluentinc/cp-kafka:latest
@@ -30,6 +32,10 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+    links:
+      - zookeeper
+    networks:
+      - kminion
 
   kafka-minion:
     build:
@@ -45,3 +51,37 @@ services:
     environment:
       KAFKA_BROKERS: kafka:29092
     restart: unless-stopped
+    links:
+      - kafka
+    networks:
+      - kminion
+
+  grafana:
+    image: grafana/grafana-oss
+    ports:
+      - '3000:3000'
+    volumes:
+      - "/tmp/grafana:/var/lib/grafana"
+    container_name: grafana
+    hostname: grafana
+    networks:
+      - kminion
+
+  prometheus:
+    image: prom/prometheus
+    ports:
+      - '9090:9090'
+    configs:
+      - source: prometheus
+        target: /etc/prometheus/prometheus.yml
+    container_name: prometheus
+    hostname: prometheus
+    networks:
+      - kminion
+configs:
+  prometheus:
+    file: example/sample_prometheus.yml
+
+
+networks:
+  kminion:

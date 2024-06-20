@@ -22,6 +22,8 @@ func (s *Service) produceMessagesToAllPartitions(ctx context.Context) {
 // it will add it to the message tracker. If producing fails a message will be logged and the respective metrics
 // will be incremented.
 func (s *Service) produceMessage(ctx context.Context, partition int) {
+	logger := s.logger.Named("producer")
+
 	topicName := s.config.TopicManagement.Name
 	record, msg := createEndToEndRecord(s.minionID, topicName, partition)
 
@@ -34,6 +36,7 @@ func (s *Service) produceMessage(ctx context.Context, partition int) {
 	pID := strconv.Itoa(partition)
 	s.messagesProducedInFlight.WithLabelValues(pID).Inc()
 	s.messageTracker.addToTracker(msg)
+	logger.Debug("producing message", zap.Any("record", record))
 	s.client.Produce(childCtx, record, func(r *kgo.Record, err error) {
 		defer cancel()
 		ackDuration := time.Since(startTime)
