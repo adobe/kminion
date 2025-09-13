@@ -154,7 +154,7 @@ func doElementsMatch(a, b []int32) bool {
 	}
 
 	sort.Slice(a, func(i, j int) bool { return a[i] < a[j] })
-	sort.Slice(b, func(i, j int) bool { return a[i] < a[j] })
+	sort.Slice(b, func(i, j int) bool { return b[i] < b[j] })
 	for i, num := range a {
 		if num != b[i] {
 			return false
