@@ -114,14 +114,14 @@ func (e *Exporter) collectTopicPartitionOffsets(ctx context.Context, ch chan<- p
 	}
 
 	// Process Max Timestamps
-	for _, topic := range maxTimestampOffsets.Topics {
-		if !e.minionSvc.IsTopicAllowed(topic.Topic) {
+	for topicName, partitions := range maxTimestampOffsets {
+		if !e.minionSvc.IsTopicAllowed(topicName) {
 			continue
 		}
 		topicMaxTimestamp := int64(0)
 		hasErrors := false
-		for _, partition := range topic.Partitions {
-			err := kerr.ErrorForCode(partition.ErrorCode)
+		for _, partition := range partitions {
+			err := partition.Err
 			if err != nil {
 				hasErrors = true
 				isOk = false
@@ -139,7 +139,7 @@ func (e *Exporter) collectTopicPartitionOffsets(ctx context.Context, ch chan<- p
 					e.partitionMaxTimestamp,
 					prometheus.GaugeValue,
 					float64(partition.Timestamp),
-					topic.Topic,
+					topicName,
 					strconv.Itoa(int(partition.Partition)),
 				)
 			}
@@ -151,7 +151,7 @@ func (e *Exporter) collectTopicPartitionOffsets(ctx context.Context, ch chan<- p
 				e.topicMaxTimestamp,
 				prometheus.GaugeValue,
 				float64(topicMaxTimestamp),
-				topic.Topic,
+				topicName,
 			)
 		}
 	}
