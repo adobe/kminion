@@ -1,31 +1,61 @@
 version: 2
 updates:
-  # Enable GitHub Actions updates
+  # GitHub Actions dependencies (grouped into single PR)
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 10
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "UTC"
     commit-message:
       prefix: "chore"
       include: "scope"
+    groups:
+      github-actions-dependencies:
+        patterns:
+          - "*"
 
-  # Enable Go module updates  
-  - package-ecosystem: "gomod"
-    directory: "/"
-    schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 10
-    commit-message:
-      prefix: "chore"
-      include: "scope"
-
-  # Enable Docker updates
+  # Tool versions tracking via Docker ecosystem (grouped into single PR)
   - package-ecosystem: "docker"
     directory: "/"
     schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 5
+      interval: "weekly"
+      day: "wednesday"
+      time: "09:00"
+      timezone: "UTC"
     commit-message:
       prefix: "chore"
       include: "scope"
+    groups:
+      docker-dependencies:
+        patterns:
+          - "*"
+
+
+  # =============================================================================
+  # GO MODULES CONFIGURATION WITH GROUPING
+  # =============================================================================
+  # Using groups to combine all Go module updates into fewer PRs.
+  # Note: Groups work within each package-ecosystem entry, so we separate:
+  # - Main modules (root, api, properties, tests/e2e)
+  # - Third-party modules (all third_party/* directories)
+  #
+  # Current go.mod files detected:
+  # - / (root)
+  
+  # Main Go modules (grouped into single PR)
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "UTC"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      main-go-dependencies:
+        patterns:
+          - "*"
