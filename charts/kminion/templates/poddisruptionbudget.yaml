@@ -1,5 +1,5 @@
 {{- if .Values.podDisruptionBudget }}
-apiVersion: {{ include "kminion.podDisruptionBudget.apiVersion" . }}
+apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: {{ template "kminion.fullname" . }}
