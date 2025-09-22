@@ -8,7 +8,7 @@ image:
   repository: ghcr.io/adobe/kminion
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
-  tag: ""
+  tag: "2.2.14-adobe-20250913"
 
 imagePullSecrets: []
 nameOverride: ""
@@ -126,11 +126,11 @@ affinity: {}
 customLabels: {}
 
 serviceMonitor:
-  create: false
+  create: true
   additionalLabels: {}
   honorLabels: false
-  scrapeTimeout: 10s
-  interval: 15s
+  scrapeTimeout: 29s
+  interval: 30s
   relabelings: []
   # - sourceLabels: [__meta_kubernetes_pod_label_my_label]
   #   separator: ;
