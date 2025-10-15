@@ -1,0 +1,31 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:base"
+  ],
+  "labels": ["dependencies"],
+  "postUpdateOptions": [
+    "gomodTidy"
+  ],
+  "packageRules": [
+    {
+      "description": "Group all non-major Go module updates together",
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "Go modules (non-major)",
+      "automerge": false
+    },
+    {
+      "description": "Group all major Go module updates together",
+      "matchDatasources": ["go"],
+      "matchUpdateTypes": ["major"],
+      "groupName": "Go modules (major)",
+      "automerge": false
+    }
+  ],
+  "vulnerabilityAlerts": {
+    "labels": ["security"],
+    "automerge": false
+  }
+}
+
