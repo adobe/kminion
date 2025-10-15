@@ -4,23 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"go.uber.org/zap"
 )
 
-func (s *Service) ListEndOffsetsCached(ctx context.Context) (kadm.ListedOffsets, error) {
-	return s.listOffsetsCached(ctx, "end")
-}
-
-func (s *Service) ListStartOffsetsCached(ctx context.Context) (kadm.ListedOffsets, error) {
-	return s.listOffsetsCached(ctx, "start")
-}
-
-func (s *Service) listOffsetsCached(ctx context.Context, offsetType string) (kadm.ListedOffsets, error) {
-	reqId := ctx.Value("requestId").(string)
-	key := fmt.Sprintf("partition-%s-offsets-%s", offsetType, reqId)
+func (s *Service) ListOffsetsCached(ctx context.Context, timestamp int64) (kadm.ListedOffsets, error) {
+	reqId, ok := ctx.Value(RequestIDKey).(string)
+	if !ok || reqId == "" {
+		reqId = "default"
+	}
+	key := "partition-offsets-" + strconv.Itoa(int(timestamp)) + "-" + reqId
 
 	if cachedRes, exists := s.getCachedItem(key); exists {
 		return cachedRes.(kadm.ListedOffsets), nil
