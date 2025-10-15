@@ -12,6 +12,9 @@ build: ## Build KMinion binary
 test: ## Run unit tests
 	go test -v ./...
 
+fmt: ## Format all Go code
+	go fmt ./...
+
 e2e-setup: ## Start Kafka cluster for E2E testing
 	@chmod +x e2e/bin/setup-kafka.sh
 	./e2e/bin/setup-kafka.sh start
@@ -40,3 +43,15 @@ e2e-full: e2e-setup ## Run full E2E test suite (setup, build, start, test, clean
 	$(MAKE) e2e-start && \
 	$(MAKE) e2e-test
 
+
+IMAGE ?= kminion:latest
+
+docker-build: ## Build and push Docker image for multiple archs (IMAGE=kminion:latest)
+	docker buildx build \
+		--platform linux/amd64,linux/arm64 \
+		--build-arg VERSION=$(shell git describe --tags --always --dirty 2>/dev/null || echo "development") \
+		--build-arg COMMIT=$(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown") \
+		--build-arg BUILT_AT=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ") \
+		--push \
+		-t $(IMAGE) \
+		.
