@@ -61,10 +61,20 @@ kafka:
       enableFast: true
     # OAUTHBEARER config properties
     oauth:
+      # Type of OAuth provider. Valid values: AdobeIMS (leave empty for generic OAuth)
+      type: ""
+      # OAuth token endpoint (used by both generic OAuth and provider-specific types like AdobeIMS)
       tokenEndpoint: ""
+      # Client ID (used by both generic OAuth and provider-specific types)
       clientId: ""
+      # Client secret (used by both generic OAuth and provider-specific types)
       clientSecret: ""
+      # Scope for generic OAuth (not used by AdobeIMS)
       scope: ""
+      # Additional provider-specific configuration
+      # For AdobeIMS: clientCode is required
+      additional:
+        clientCode: ""
 
 minion:
   consumerGroups:

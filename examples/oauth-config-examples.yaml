@@ -1,0 +1,87 @@
+# Example configurations for OAuth authentication with Kafka
+
+# Example 1: Generic OAuth (e.g., Keycloak, Okta, Auth0)
+---
+kafka:
+  brokers:
+    - kafka-broker-1:9092
+    - kafka-broker-2:9092
+  clientId: "kminion"
+
+  sasl:
+    enabled: true
+    mechanism: "OAUTHBEARER"
+    oauth:
+      # Leave type empty for generic OAuth
+      type: ""
+      tokenEndpoint: "https://your-oauth-provider.com/oauth/token"
+      clientId: "your-kafka-client-id"
+      clientSecret: "your-kafka-client-secret"
+      scope: "kafka"
+
+# Example 2: Adobe IMS OAuth
+---
+kafka:
+  brokers:
+    - kafka-broker-1:9092
+    - kafka-broker-2:9092
+  clientId: "kminion"
+
+  sasl:
+    enabled: true
+    mechanism: "OAUTHBEARER"
+    oauth:
+      type: "AdobeIMS"
+      tokenEndpoint: "https://ims-na1.adobelogin.com"
+      clientId: "your-ims-client-id"
+      clientSecret: "your-ims-client-secret"
+      additional:
+        clientCode: "your-ims-authorization-code"
+
+# Example 3: Generic OAuth with TLS
+---
+kafka:
+  brokers:
+    - kafka-broker-1:9093
+    - kafka-broker-2:9093
+  clientId: "kminion"
+
+  tls:
+    enabled: true
+    caFilepath: "/path/to/ca-cert.pem"
+    certFilepath: "/path/to/client-cert.pem"
+    keyFilepath: "/path/to/client-key.pem"
+
+  sasl:
+    enabled: true
+    mechanism: "OAUTHBEARER"
+    oauth:
+      type: ""
+      tokenEndpoint: "https://your-oauth-provider.com/oauth/token"
+      clientId: "your-kafka-client-id"
+      clientSecret: "your-kafka-client-secret"
+      scope: "kafka"
+
+# Example 4: Adobe IMS OAuth with TLS
+---
+kafka:
+  brokers:
+    - kafka-broker-1:9093
+    - kafka-broker-2:9093
+  clientId: "kminion"
+
+  tls:
+    enabled: true
+    caFilepath: "/path/to/ca-cert.pem"
+
+  sasl:
+    enabled: true
+    mechanism: "OAUTHBEARER"
+    oauth:
+      type: "AdobeIMS"
+      tokenEndpoint: "https://ims-na1.adobelogin.com"
+      clientId: "your-ims-client-id"
+      clientSecret: "your-ims-client-secret"
+      additional:
+        clientCode: "your-ims-authorization-code"
+

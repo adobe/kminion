@@ -119,15 +119,31 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 		}
 
 		// OAuthBearer
-		if cfg.SASL.Mechanism == "OAUTHBEARER" {
-			mechanism := oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
-				token, err := cfg.SASL.OAuthBearer.getToken(ctx)
-				return oauth.Auth{
-					Zid:   cfg.SASL.OAuthBearer.ClientID,
-					Token: token,
-				}, err
-			})
-			opts = append(opts, kgo.SASL(mechanism))
+		if cfg.SASL.Mechanism == SASLMechanismOAuthBearer {
+			switch cfg.SASL.OAuthBearer.Type {
+			case OAuthBearerTypeAdobeIMS:
+				bearer, err := NewAdobeImsOAuthBearer(
+					cfg.SASL.OAuthBearer.ClientID,
+					cfg.SASL.OAuthBearer.ClientSecret,
+					cfg.SASL.OAuthBearer.Additional.ClientCode,
+					cfg.SASL.OAuthBearer.TokenEndpoint,
+					logger,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create Adobe IMS OAuth bearer: %w", err)
+				}
+				opts = append(opts, bearer.Opt())
+			default:
+				// Generic OAuth
+				mechanism := oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
+					token, err := cfg.SASL.OAuthBearer.getToken(ctx)
+					return oauth.Auth{
+						Zid:   cfg.SASL.OAuthBearer.ClientID,
+						Token: token,
+					}, err
+				})
+				opts = append(opts, kgo.SASL(mechanism))
+			}
 		}
 	}
 
@@ -205,7 +221,6 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 
 	return opts, nil
 }
-
 
 // decryptPrivateKey attempts to decrypt an encrypted PEM-encoded private key.
 // It supports both modern PKCS#8 encrypted keys and legacy PEM encryption (with deprecation warning).
