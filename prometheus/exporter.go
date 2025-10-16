@@ -281,6 +281,7 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 }
 
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
+	startTime := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*180)
 	defer cancel()
 
@@ -297,9 +298,19 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	ok = e.collectConsumerGroupLags(ctx, ch) && ok
 	ok = e.collectTopicInfo(ctx, ch) && ok
 
+	duration := time.Since(startTime)
+
 	if ok {
 		ch <- prometheus.MustNewConstMetric(e.exporterUp, prometheus.GaugeValue, 1.0)
+		e.logger.Info("Completed Kafka metrics scrape successfully",
+			zap.String("request_id", uuid.String()),
+			zap.Duration("duration", duration),
+			zap.Float64("duration_seconds", duration.Seconds()))
 	} else {
 		ch <- prometheus.MustNewConstMetric(e.exporterUp, prometheus.GaugeValue, 0.0)
+		e.logger.Warn("Completed Kafka metrics scrape with errors",
+			zap.String("request_id", uuid.String()),
+			zap.Duration("duration", duration),
+			zap.Float64("duration_seconds", duration.Seconds()))
 	}
 }
