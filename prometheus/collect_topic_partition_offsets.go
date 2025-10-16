@@ -32,7 +32,7 @@ func (e *Exporter) collectTopicPartitionOffsets(ctx context.Context, ch chan<- p
 	// Highest Timestamp Offsets
 	// NB: this requires Kafka Brokers 3.0+ (see https://issues.apache.org/jira/browse/KAFKA-12541)
 	// In older versions this is returning the timestamp of the low watermarks (earliest offset)
-	maxTimestampOffsets, err := e.minionSvc.ListOffsetsCached(ctx, -3)
+	maxTimestampOffsets, err := e.minionSvc.ListMaxTimestampOffsetsCached(ctx)
 	if err != nil {
 		e.logger.Error("failed to fetch offsets for max timestamp", zap.Error(err))
 		return false

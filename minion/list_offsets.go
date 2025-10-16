@@ -4,19 +4,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/twmb/franz-go/pkg/kadm"
 	"go.uber.org/zap"
 )
 
-func (s *Service) ListOffsetsCached(ctx context.Context, timestamp int64) (kadm.ListedOffsets, error) {
+func (s *Service) ListEndOffsetsCached(ctx context.Context) (kadm.ListedOffsets, error) {
+	return s.listOffsetsCached(ctx, "end")
+}
+
+func (s *Service) ListStartOffsetsCached(ctx context.Context) (kadm.ListedOffsets, error) {
+	return s.listOffsetsCached(ctx, "start")
+}
+
+func (s *Service) ListMaxTimestampOffsetsCached(ctx context.Context) (kadm.ListedOffsets, error) {
+	return s.listOffsetsCached(ctx, "maxTimestamp")
+}
+
+func (s *Service) listOffsetsCached(ctx context.Context, offsetType string) (kadm.ListedOffsets, error) {
 	reqId, ok := ctx.Value(RequestIDKey).(string)
 	if !ok || reqId == "" {
 		reqId = "default"
 	}
-	key := "partition-offsets-" + strconv.Itoa(int(timestamp)) + "-" + reqId
+	key := fmt.Sprintf("partition-%s-offsets-%s", offsetType, reqId)
 
 	if cachedRes, exists := s.getCachedItem(key); exists {
 		return cachedRes.(kadm.ListedOffsets), nil
@@ -28,6 +39,8 @@ func (s *Service) ListOffsetsCached(ctx context.Context, timestamp int64) (kadm.
 		listFunc = s.ListEndOffsets
 	case "start":
 		listFunc = s.ListStartOffsets
+	case "maxTimestamp":
+		listFunc = s.ListMaxTimestampOffsets
 	default:
 		return nil, fmt.Errorf("invalid offset type: %s", offsetType)
 	}
@@ -57,6 +70,15 @@ func (s *Service) ListEndOffsets(ctx context.Context) (kadm.ListedOffsets, error
 // ListStartOffsets fetches the low water mark for all topic partitions.
 func (s *Service) ListStartOffsets(ctx context.Context) (kadm.ListedOffsets, error) {
 	return s.listOffsetsInternal(ctx, s.admClient.ListStartOffsets, "start")
+}
+
+// ListMaxTimestampOffsets fetches the offsets for the maximum timestamp for all topic partitions.
+// This requires Kafka 3.0+ (see https://issues.apache.org/jira/browse/KAFKA-12541)
+// Uses timestamp -3 which returns the offset for the record with the largest timestamp.
+func (s *Service) ListMaxTimestampOffsets(ctx context.Context) (kadm.ListedOffsets, error) {
+	return s.listOffsetsInternal(ctx, func(ctx context.Context, topics ...string) (kadm.ListedOffsets, error) {
+		return s.admClient.ListOffsetsAfterMilli(ctx, -3, topics...)
+	}, "maxTimestamp")
 }
 
 type listOffsetsFunc func(context.Context, ...string) (kadm.ListedOffsets, error)
