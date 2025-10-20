@@ -9,11 +9,11 @@ import (
 	"github.com/cloudhut/kminion/v2/logging"
 	"github.com/cloudhut/kminion/v2/minion"
 	"github.com/cloudhut/kminion/v2/prometheus"
-	"github.com/knadh/koanf"
+	"github.com/go-viper/mapstructure/v2"
+	"github.com/knadh/koanf/v2"
 	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
-	"github.com/mitchellh/mapstructure"
 	"go.uber.org/zap"
 )
 
@@ -86,16 +86,18 @@ func newConfig(logger *zap.Logger) (Config, error) {
 		return Config{}, err
 	}
 
-	err = k.Load(env.ProviderWithValue("", ".", func(s string, v string) (string, interface{}) {
-		key := strings.ReplaceAll(strings.ToLower(s), "_", ".")
-		// Check to exist if we have a configuration option already and see if it's a slice
-		// If there is a comma in the value, split the value into a slice by the comma.
-		if strings.Contains(v, ",") {
-			return key, strings.Split(v, ",")
-		}
+	err = k.Load(env.Provider(".", env.Opt{
+		TransformFunc: func(s string, v string) (string, interface{}) {
+			key := strings.ReplaceAll(strings.ToLower(s), "_", ".")
+			// Check to exist if we have a configuration option already and see if it's a slice
+			// If there is a comma in the value, split the value into a slice by the comma.
+			if strings.Contains(v, ",") {
+				return key, strings.Split(v, ",")
+			}
 
-		// Otherwise return the new key with the unaltered value
-		return key, v
+			// Otherwise return the new key with the unaltered value
+			return key, v
+		},
 	}), nil)
 	if err != nil {
 		return Config{}, err
