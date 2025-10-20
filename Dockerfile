@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 go build \
 ############################################################
 # Runtime Image
 ############################################################
-FROM alpine:3
+FROM alpine:latest
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/bin/kminion /app/kminion
 RUN chmod -R +x /app/kminion
