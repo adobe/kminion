@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	cmap "github.com/orcaman/concurrent-map"
+	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"go.uber.org/atomic"
@@ -19,10 +19,10 @@ type Storage struct {
 	// offsetCommits is a map of all consumer offsets.
 	// A unique key in the format "group:topic:partition" is used as map key.
 	// Value is of type OffsetCommit
-	offsetCommits cmap.ConcurrentMap
+	offsetCommits cmap.ConcurrentMap[string, OffsetCommit]
 
 	// progressTracker is a map that tracks what offsets in each partition have already been consumed
-	progressTracker cmap.ConcurrentMap
+	progressTracker cmap.ConcurrentMap[string, int64]
 
 	isReadyBool *atomic.Bool
 
@@ -45,8 +45,8 @@ type OffsetCommit struct {
 func newStorage(logger *zap.Logger) (*Storage, error) {
 	return &Storage{
 		logger:          logger.Named("storage"),
-		offsetCommits:   cmap.New(),
-		progressTracker: cmap.New(),
+		offsetCommits:   cmap.New[OffsetCommit](),
+		progressTracker: cmap.New[int64](),
 		isReadyBool:     atomic.NewBool(false),
 		consumedRecords: atomic.NewFloat64(0),
 	}, nil
@@ -76,9 +76,8 @@ func (s *Storage) addOffsetCommit(key kmsg.OffsetCommitKey, value kmsg.OffsetCom
 	uniqueKey := encodeOffsetCommitKey(key)
 
 	commitCount := 0
-	commitInterface, exists := s.offsetCommits.Get(uniqueKey)
+	offsetCommit, exists := s.offsetCommits.Get(uniqueKey)
 	if exists {
-		offsetCommit := commitInterface.(OffsetCommit)
 		commitCount = offsetCommit.CommitCount
 	}
 
@@ -95,10 +94,9 @@ func (s *Storage) addOffsetCommit(key kmsg.OffsetCommitKey, value kmsg.OffsetCom
 func (s *Storage) getConsumedOffsets() map[int32]int64 {
 	offsetsByPartition := make(map[int32]int64)
 	offsets := s.progressTracker.Items()
-	for partitionID, offsetStr := range offsets {
-		val := offsetStr.(int64)
-		partitionID, _ := strconv.ParseInt(partitionID, 10, 32)
-		offsetsByPartition[int32(partitionID)] = val
+	for partitionID, offset := range offsets {
+		partitionIDInt, _ := strconv.ParseInt(partitionID, 10, 32)
+		offsetsByPartition[int32(partitionIDInt)] = offset
 	}
 
 	return offsetsByPartition
@@ -119,21 +117,19 @@ func (s *Storage) getGroupOffsets(isAllowed func(groupName string, groupState st
 
 	offsets := s.offsetCommits.Items()
 	for _, offset := range offsets {
-		val := offset.(OffsetCommit)
-
-		if !isAllowed(val.Key.Group, "") {
+		if !isAllowed(offset.Key.Group, "") {
 			continue
 		}
 
 		// Initialize inner maps as necessary
-		if _, exists := offsetsByGroup[val.Key.Group]; !exists {
-			offsetsByGroup[val.Key.Group] = make(map[string]map[int32]OffsetCommit)
+		if _, exists := offsetsByGroup[offset.Key.Group]; !exists {
+			offsetsByGroup[offset.Key.Group] = make(map[string]map[int32]OffsetCommit)
 		}
-		if _, exists := offsetsByGroup[val.Key.Group][val.Key.Topic]; !exists {
-			offsetsByGroup[val.Key.Group][val.Key.Topic] = make(map[int32]OffsetCommit)
+		if _, exists := offsetsByGroup[offset.Key.Group][offset.Key.Topic]; !exists {
+			offsetsByGroup[offset.Key.Group][offset.Key.Topic] = make(map[int32]OffsetCommit)
 		}
 
-		offsetsByGroup[val.Key.Group][val.Key.Topic][val.Key.Partition] = val
+		offsetsByGroup[offset.Key.Group][offset.Key.Topic][offset.Key.Partition] = offset
 	}
 
 	return offsetsByGroup
