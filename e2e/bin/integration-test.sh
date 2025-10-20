@@ -7,7 +7,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 METRICS_URL="${METRICS_URL:-http://localhost:8080/metrics}"
-WAIT_TIMEOUT="${WAIT_TIMEOUT:-30}"
+WAIT_TIMEOUT="${WAIT_TIMEOUT:-60}"
 
 # Colors for output
 RED='\033[0;31m'

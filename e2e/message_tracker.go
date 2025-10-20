@@ -1,11 +1,12 @@
 package e2e
 
 import (
+	"context"
 	"fmt"
 	"strconv"
 	"time"
 
-	"github.com/jellydator/ttlcache/v2"
+	"github.com/jellydator/ttlcache/v3"
 
 	"go.uber.org/zap"
 )
@@ -22,79 +23,78 @@ import (
 type messageTracker struct {
 	svc    *Service
 	logger *zap.Logger
-	cache  *ttlcache.Cache
+	cache  *ttlcache.Cache[string, *EndToEndMessage]
 }
 
 func newMessageTracker(svc *Service) *messageTracker {
 	defaultExpirationDuration := svc.config.Consumer.RoundtripSla
-	cache := ttlcache.NewCache()
-	_ = cache.SetTTL(defaultExpirationDuration)
+	cache := ttlcache.New[string, *EndToEndMessage](
+		ttlcache.WithTTL[string, *EndToEndMessage](defaultExpirationDuration),
+	)
 
 	t := &messageTracker{
 		svc:    svc,
 		logger: svc.logger.Named("message_tracker"),
 		cache:  cache,
 	}
-	t.cache.SetExpirationReasonCallback(func(key string, reason ttlcache.EvictionReason, value interface{}) {
-		t.onMessageExpired(key, reason, value.(*EndToEndMessage))
+
+	cache.OnEviction(func(ctx context.Context, reason ttlcache.EvictionReason, item *ttlcache.Item[string, *EndToEndMessage]) {
+		t.onMessageExpired(item.Key(), reason, item.Value())
 	})
+
+	// Start the cache's automatic cleanup
+	go cache.Start()
 
 	return t
 }
 
 func (t *messageTracker) addToTracker(msg *EndToEndMessage) {
-	_ = t.cache.Set(msg.MessageID, msg)
+	t.cache.Set(msg.MessageID, msg, ttlcache.DefaultTTL)
 }
 
 // updateItemIfExists only updates a message if it still exists in the cache. The remaining time to live will not
 // be refreshed.
-// If it doesn't exist an ttlcache.ErrNotFound error will be returned.
+// If it doesn't exist an error will be returned.
 //
 //nolint:unused
 func (t *messageTracker) updateItemIfExists(msg *EndToEndMessage) error {
-	_, ttl, err := t.cache.GetWithTTL(msg.MessageID)
-	if err != nil {
-		if err == ttlcache.ErrNotFound {
-			return err
-		}
-		panic(err)
+	item := t.cache.Get(msg.MessageID)
+	if item == nil {
+		return fmt.Errorf("item not found")
 	}
 
-	// Because the returned TTL is set to the original TTL duration (and not the remaining TTL) we have to calculate
-	// the remaining TTL now as we want to update the existing cache item without changing the remaining time to live.
-	expiryTimestamp := msg.creationTime().Add(ttl)
-	remainingTTL := time.Until(expiryTimestamp)
+	// Calculate the remaining TTL to preserve the original expiration time
+	remainingTTL := time.Until(item.ExpiresAt())
 	if remainingTTL < 0 {
 		// This entry should have been deleted already. Race condition.
-		return ttlcache.ErrNotFound
+		return fmt.Errorf("item expired")
 	}
 
-	err = t.cache.SetWithTTL(msg.MessageID, msg, remainingTTL)
-	if err != nil {
-		panic(err)
-	}
+	// Set the updated message with the remaining TTL
+	t.cache.Set(msg.MessageID, msg, remainingTTL)
 
 	return nil
 }
 
-// removeFromTracker removes an entry from the cache. If the key does not exist it will return an ttlcache.ErrNotFound error.
+// removeFromTracker removes an entry from the cache. If the key does not exist it will return an error.
 func (t *messageTracker) removeFromTracker(messageID string) error {
-	return t.cache.Remove(messageID)
+	// Check if the item exists before trying to delete it
+	if !t.cache.Has(messageID) {
+		return fmt.Errorf("item not found")
+	}
+	t.cache.Delete(messageID)
+	return nil
 }
 
 func (t *messageTracker) onMessageArrived(arrivedMessage *EndToEndMessage) {
-	cm, err := t.cache.Get(arrivedMessage.MessageID)
-	if err != nil {
-		if err == ttlcache.ErrNotFound {
-			// message expired and was removed from the cache
-			// it arrived too late, nothing to do here...
-			return
-		} else {
-			panic(fmt.Errorf("failed to get message from cache: %w", err))
-		}
+	item := t.cache.Get(arrivedMessage.MessageID)
+	if item == nil {
+		// message expired and was removed from the cache
+		// it arrived too late, nothing to do here...
+		return
 	}
 
-	msg := cm.(*EndToEndMessage)
+	msg := item.Value()
 
 	expireTime := msg.creationTime().Add(t.svc.config.Consumer.RoundtripSla)
 	isExpired := time.Now().Before(expireTime)
@@ -116,16 +116,14 @@ func (t *messageTracker) onMessageArrived(arrivedMessage *EndToEndMessage) {
 	t.svc.roundtripLatency.WithLabelValues(pID).Observe(latency.Seconds())
 
 	// Remove message from cache, so that we don't track it any longer and won't mark it as lost when the entry expires.
-	_ = t.cache.Remove(msg.MessageID)
+	t.cache.Delete(msg.MessageID)
 }
 
-func (t *messageTracker) onMessageExpired(_ string, reason ttlcache.EvictionReason, value interface{}) {
-	if reason == ttlcache.Removed {
+func (t *messageTracker) onMessageExpired(key string, reason ttlcache.EvictionReason, msg *EndToEndMessage) {
+	if reason == ttlcache.EvictionReasonDeleted {
 		// We are not interested in messages that have been removed by us!
 		return
 	}
-
-	msg := value.(*EndToEndMessage)
 
 	created := msg.creationTime()
 	age := time.Since(created)

@@ -66,10 +66,23 @@ func NewService(cfg Config, logger *zap.Logger, kafkaSvc *kafka.Service, metrics
 	logger.Info("successfully connected to kafka cluster")
 
 	// Compile regexes. We can ignore the errors because valid compilation has been validated already
-	allowedGroupIDsExpr, _ := compileRegexes(cfg.ConsumerGroups.AllowedGroupIDs)
-	ignoredGroupIDsExpr, _ := compileRegexes(cfg.ConsumerGroups.IgnoredGroupIDs)
-	allowedTopicsExpr, _ := compileRegexes(cfg.Topics.AllowedTopics)
-	ignoredTopicsExpr, _ := compileRegexes(cfg.Topics.IgnoredTopics)
+	allowedGroupIDsExpr, err := compileRegexes(cfg.ConsumerGroups.AllowedGroupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile allowed group IDs regex: %w", err)
+	}
+	ignoredGroupIDsExpr, err := compileRegexes(cfg.ConsumerGroups.IgnoredGroupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile ignored group IDs regex: %w", err)
+	}
+	allowedTopicsExpr, err := compileRegexes(cfg.Topics.AllowedTopics)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile allowed topics regex: %w", err)
+	}
+	ignoredTopicsExpr, err := compileRegexes(cfg.Topics.IgnoredTopics)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile ignored topics regex: %w", err)
+	}
+
 
 	service := &Service{
 		Cfg:    cfg,

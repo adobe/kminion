@@ -25,7 +25,7 @@ func (e *Exporter) collectTopicPartitionOffsets(ctx context.Context, ch chan<- p
 	// High Watermarks
 	highWaterMarks, err := e.minionSvc.ListEndOffsetsCached(ctx)
 	if err != nil {
-		e.logger.Error("failed to fetch low water marks", zap.Error(err))
+		e.logger.Error("failed to fetch high water marks", zap.Error(err))
 		return false
 	}
 
