@@ -100,9 +100,14 @@ validate_builtin_metrics() {
     local core_metrics=(
         "kminion_exporter_up"
         "kminion_exporter_offset_consumer_records_consumed_total"
+        "kminion_kafka_received_bytes"
+        "kminion_kafka_requests_received_total"
+        "kminion_kafka_requests_sent_total"
+        "kminion_kafka_sent_bytes"
+        "kminion_log_messages_total"
     )
 
-    # Kafka cluster metrics
+    # Kafka cluster/broker metrics
     local kafka_metrics=(
         "kminion_kafka_cluster_info"
         "kminion_kafka_broker_info"
@@ -111,17 +116,29 @@ validate_builtin_metrics() {
     # Topic metrics
     local topic_metrics=(
         "kminion_kafka_topic_info"
-        "kminion_kafka_topic_partition_high_water_mark"
-        "kminion_kafka_topic_high_water_mark_sum"
-        "kminion_kafka_topic_partition_low_water_mark"
+        "kminion_kafka_topic_info_min_insync_replicas"
+        "kminion_kafka_topic_info_partitions_count"
+        "kminion_kafka_topic_info_replication_factor"
+        "kminion_kafka_topic_info_retention_ms"
         "kminion_kafka_topic_low_water_mark_sum"
+        "kminion_kafka_topic_partition_low_water_mark"
+        "kminion_kafka_topic_high_water_mark_sum"
+        "kminion_kafka_topic_partition_high_water_mark"
+        "kminion_kafka_topic_max_timestamp"
+        "kminion_kafka_topic_partition_max_timestamp"
     )
 
     # Consumer group metrics
     local consumer_group_metrics=(
         "kminion_kafka_consumer_group_info"
+        "kminion_kafka_consumer_group_info_count"
+        "kminion_kafka_consumer_group_info_empty_groups"
         "kminion_kafka_consumer_group_members"
+        "kminion_kafka_consumer_group_topic_assigned_partitions"
         "kminion_kafka_consumer_group_topic_lag"
+        "kminion_kafka_consumer_group_topic_members"
+        "kminion_kafka_consumer_group_topic_offset_sum"
+        "kminion_kafka_consumer_group_topic_partition_lag"
     )
 
     # Log dir metrics
