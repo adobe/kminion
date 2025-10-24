@@ -64,49 +64,19 @@ func (s *Service) listOffsetsCached(ctx context.Context, offsetType string) (kad
 
 // ListEndOffsets fetches the high water mark for all topic partitions.
 func (s *Service) ListEndOffsets(ctx context.Context) (kadm.ListedOffsets, error) {
-	return s.listOffsetsInternal(ctx, func(ctx context.Context, topics ...string) (kadm.ListedOffsets, error) {
-		if len(topics) == 0 {
-			// Get all topics if none specified
-			allTopics, err := s.getAllowedTopics(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get topics for listing end offsets: %w", err)
-			}
-			topics = allTopics
-		}
-		return s.admClient.ListEndOffsets(ctx, topics...)
-	}, "end")
+	return s.listOffsetsInternal(ctx, s.admClient.ListEndOffsets, "end")
 }
 
 // ListStartOffsets fetches the low water mark for all topic partitions.
 func (s *Service) ListStartOffsets(ctx context.Context) (kadm.ListedOffsets, error) {
-	return s.listOffsetsInternal(ctx, func(ctx context.Context, topics ...string) (kadm.ListedOffsets, error) {
-		if len(topics) == 0 {
-			// Get all topics if none specified
-			allTopics, err := s.getAllowedTopics(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get topics for listing start offsets: %w", err)
-			}
-			topics = allTopics
-		}
-		return s.admClient.ListStartOffsets(ctx, topics...)
-	}, "start")
+	return s.listOffsetsInternal(ctx, s.admClient.ListStartOffsets, "start")
 }
 
 // ListMaxTimestampOffsets fetches the offsets for the maximum timestamp for all topic partitions.
 // This requires Kafka 3.0+ (see https://issues.apache.org/jira/browse/KAFKA-12541)
 // Uses the dedicated ListMaxTimestampOffsets method from franz-go.
 func (s *Service) ListMaxTimestampOffsets(ctx context.Context) (kadm.ListedOffsets, error) {
-	return s.listOffsetsInternal(ctx, func(ctx context.Context, topics ...string) (kadm.ListedOffsets, error) {
-		if len(topics) == 0 {
-			// Get all topics if none specified
-			allTopics, err := s.getAllowedTopics(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get topics for listing max timestamp offsets: %w", err)
-			}
-			topics = allTopics
-		}
-		return s.admClient.ListMaxTimestampOffsets(ctx, topics...)
-	}, "maxTimestamp")
+	return s.listOffsetsInternal(ctx, s.admClient.ListMaxTimestampOffsets, "maxTimestamp")
 }
 
 type listOffsetsFunc func(context.Context, ...string) (kadm.ListedOffsets, error)
@@ -158,21 +128,4 @@ func (s *Service) listOffsetsInternal(ctx context.Context, listFunc listOffsetsF
 	}
 
 	return listedOffsets, nil
-}
-
-// getAllowedTopics gets all topics from metadata and filters them according to the configuration
-func (s *Service) getAllowedTopics(ctx context.Context) ([]string, error) {
-	metadata, err := s.GetMetadataCached(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata: %w", err)
-	}
-
-	var allowedTopics []string
-	for _, topic := range metadata.Topics {
-		if topic.Topic != nil && s.IsTopicAllowed(*topic.Topic) {
-			allowedTopics = append(allowedTopics, *topic.Topic)
-		}
-	}
-
-	return allowedTopics, nil
 }
