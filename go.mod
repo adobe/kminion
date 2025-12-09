@@ -3,7 +3,7 @@ module github.com/cloudhut/kminion/v2
 go 1.25
 
 require (
-	github.com/adobe/ims-go v0.19.1
+	github.com/adobe/ims-go v0.19.2
 	github.com/go-viper/mapstructure/v2 v2.4.0
 	github.com/google/uuid v1.6.0
 	github.com/jcmturner/gokrb5/v8 v8.4.4
@@ -23,7 +23,7 @@ require (
 	go.uber.org/atomic v1.11.0
 	go.uber.org/automaxprocs v1.6.0
 	go.uber.org/zap v1.27.1
-	golang.org/x/sync v0.18.0
+	golang.org/x/sync v0.19.0
 )
 
 require (
