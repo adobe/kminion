@@ -55,5 +55,4 @@ require (
 	golang.org/x/sys v0.40.0 // indirect
 	google.golang.org/protobuf v1.36.11 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-// 	github.com/pelletier/go-toml v1.9.1 // indirect  -> TODO: pkg is declared in upstream, but removed adobe: https://github.com/adobe/kminion/pull/20/changes
 )
