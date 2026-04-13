@@ -10,10 +10,10 @@ import (
 	"github.com/cloudhut/kminion/v2/minion"
 	"github.com/cloudhut/kminion/v2/prometheus"
 	"github.com/go-viper/mapstructure/v2"
-	"github.com/knadh/koanf/v2"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/v2"
 	"go.uber.org/zap"
 )
 
