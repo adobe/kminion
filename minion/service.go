@@ -83,7 +83,6 @@ func NewService(cfg Config, logger *zap.Logger, kafkaSvc *kafka.Service, metrics
 		return nil, fmt.Errorf("failed to compile ignored topics regex: %w", err)
 	}
 
-
 	service := &Service{
 		Cfg:    cfg,
 		logger: logger.Named("minion_service"),
