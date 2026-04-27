@@ -7,7 +7,7 @@ ARG VERSION
 ARG BUILT_AT
 ARG COMMIT
 
-RUN apk update && apk add --no-cache git ca-certificates && update-ca-certificates
+RUN apk update && apk upgrade --no-cache && apk add --no-cache git ca-certificates && update-ca-certificates
 
 WORKDIR /app
 
