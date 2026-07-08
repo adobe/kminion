@@ -21,10 +21,11 @@ spec:
       {{- include "kminion.selectorLabels" . | nindent 6}}
   template:
     metadata:
-      {{- with .Values.podAnnotations}}
       annotations:
+        {{- include "kminion.config_checksum_annotation" . | nindent 8 }}
+        {{- with .Values.podAnnotations}}
         {{- toYaml . | nindent 8}}
-      {{- end}}
+        {{- end}}
       labels:
         {{- include "kminion.selectorLabels" . | nindent 8}}
         {{- if .Values.customLabels}}
