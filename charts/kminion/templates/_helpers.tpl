@@ -105,3 +105,8 @@ Return the appropriate apiVersion for podDisruptionBudget.
 {{- print "policy/v1beta1" }}
 {{- end }}
 {{- end }}
+
+{{- define "kminion.config_checksum_annotation" -}}
+# add annotation to trigger a deployment when the configmap is changed
+checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+{{- end }}
