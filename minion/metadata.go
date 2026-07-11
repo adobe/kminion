@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kmsg/v2"
 )
 
 type contextKey string

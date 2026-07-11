@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kmsg/v2"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 )

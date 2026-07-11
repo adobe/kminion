@@ -7,7 +7,7 @@ import (
 
 	cmap "github.com/orcaman/concurrent-map/v2"
 	"github.com/twmb/franz-go/pkg/kgo"
-	"github.com/twmb/franz-go/pkg/kmsg"
+	"github.com/twmb/franz-go/pkg/kmsg/v2"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 )
