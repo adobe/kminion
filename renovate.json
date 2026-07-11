@@ -28,8 +28,8 @@
     },
     {
       "description": "Skip kmsg v2.0.1 specifically - not usable until kgo/kadm depend on kmsg v2",
-      "matchPackageNames": ["github.com/twmb/franz-go/pkg/kmsg"],
-      "allowedVersions": "!/^2\\.0\\.1$/"
+      "matchPackageNames": ["github.com/twmb/franz-go/pkg/kmsg/v2"],
+      "allowedVersions": "!/^v2\\.0\\.1$/"
     }
   ],
   "vulnerabilityAlerts": {
