@@ -1,6 +1,6 @@
 module github.com/cloudhut/kminion/v2
 
-go 1.26
+go 1.26.5
 
 require (
 	github.com/adobe/ims-go v0.25.0
