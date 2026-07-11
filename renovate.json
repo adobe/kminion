@@ -9,29 +9,27 @@
     ":updateNotScheduled",
     ":automergeDisabled",
     "helpers:disableTypesNodeMajor",
-    ":prHourlyLimitNone",
-    ":prConcurrentLimitNone",
-    "docker:enableMajor",
-    "group:allDigest"
+    "docker:enableMajor"
   ],
   "labels": ["dependencies"],
-  "postUpdateOptions": [
-    "gomodTidy"
-  ],
+  "postUpdateOptions": ["gomodTidy", "gomodUpdateImportPaths"],
   "packageRules": [
     {
-      "description": "Group all non-major Go module updates together",
-      "matchDatasources": ["go"],
+      "description": "One PR for all non-major updates across every manager",
       "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
-      "groupName": "Go modules (non-major)",
+      "groupName": "all non-major dependencies",
       "automerge": false
     },
     {
-      "description": "Group all major Go module updates together",
-      "matchDatasources": ["go"],
+      "description": "One PR for all major updates across every manager",
       "matchUpdateTypes": ["major"],
-      "groupName": "Go modules (major)",
+      "groupName": "all major dependencies",
       "automerge": false
+    },
+    {
+      "description": "Skip kmsg v2.0.1 specifically - not usable until kgo/kadm depend on kmsg v2",
+      "matchPackageNames": ["github.com/twmb/franz-go/pkg/kmsg"],
+      "allowedVersions": "!/^2\\.0\\.1$/"
     }
   ],
   "vulnerabilityAlerts": {
@@ -39,4 +37,3 @@
     "automerge": false
   }
 }
-
