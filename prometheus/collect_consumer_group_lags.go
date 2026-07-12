@@ -60,7 +60,7 @@ type partitionOffsetLag struct {
 // topic. Callers must only call this when topicMarks is non-nil (known watermarks) -- when a topic
 // has no watermarks at all, the caller should skip calling this and omit the aggregate series
 // entirely rather than reporting a misleading lag of 0.
-func (e *Exporter) emitTopicLag(ch chan<- prometheus.Metric, groupName, topicName string, offsets []partitionOffsetLag, topicMarks map[int32]waterMark, granularity string) (totalCommitCount int) {
+func (e *Exporter) emitTopicLag(ch chan<- prometheus.Metric, groupName, topicName string, offsets []partitionOffsetLag, topicMarks map[int32]waterMark, granularity minion.ConsumerGroupGranularity) (totalCommitCount int) {
 	topicLag := float64(0)
 	topicOffsetSum := float64(0)
 	for _, po := range offsets {
