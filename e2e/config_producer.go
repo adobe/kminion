@@ -18,7 +18,7 @@ func (c *EndToEndProducerConfig) SetDefaults() {
 func (c *EndToEndProducerConfig) Validate() error {
 
 	if c.RequiredAcks != "all" && c.RequiredAcks != "leader" {
-		return fmt.Errorf("producer.requiredAcks must be 'all' or 'leader")
+		return fmt.Errorf("producer.requiredAcks must be 'all' or 'leader'")
 	}
 
 	if c.AckSla <= 0 {
