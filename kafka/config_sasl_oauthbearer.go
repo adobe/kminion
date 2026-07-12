@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // OAuthBearerConfig represents the OAUTHBEARER SASL config with support for different providers
@@ -31,8 +32,16 @@ type OAuthAdditionalConfig struct {
 	ClientCode string `koanf:"clientCode"`
 }
 
+// defaultOAuthTokenTimeout bounds how long a single generic OAuth token request may take. Without
+// this, a stalled token endpoint would block the SASL auth callback indefinitely.
+const defaultOAuthTokenTimeout = 30 * time.Second
+
 // same as AcquireToken in Console https://github.com/redpanda-data/console/blob/master/backend/pkg/config/kafka_sasl_oauth.go#L56
 func (c *OAuthBearerConfig) getToken(ctx context.Context) (string, error) {
+	return c.getTokenWithTimeout(ctx, defaultOAuthTokenTimeout)
+}
+
+func (c *OAuthBearerConfig) getTokenWithTimeout(ctx context.Context, timeout time.Duration) (string, error) {
 	authHeaderValue := base64.StdEncoding.EncodeToString([]byte(c.ClientID + ":" + c.ClientSecret))
 
 	queryParams := url.Values{
@@ -50,7 +59,7 @@ func (c *OAuthBearerConfig) getToken(ctx context.Context) (string, error) {
 	req.Header.Set("Authorization", "Basic "+authHeaderValue)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: timeout}
 
 	resp, err := client.Do(req)
 	if err != nil {
