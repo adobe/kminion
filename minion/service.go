@@ -28,6 +28,7 @@ type Service struct {
 	// requestGroup is used to deduplicate multiple concurrent requests to kafka
 	requestGroup *singleflight.Group
 	cache        map[string]interface{}
+	cacheTimers  map[string]*time.Timer
 	cacheLock    sync.RWMutex
 
 	AllowedGroupIDsExpr []*regexp.Regexp
@@ -96,6 +97,7 @@ func NewService(cfg Config, logger *zap.Logger, kafkaSvc *kafka.Service, metrics
 
 		requestGroup: &singleflight.Group{},
 		cache:        make(map[string]interface{}),
+		cacheTimers:  make(map[string]*time.Timer),
 		cacheLock:    sync.RWMutex{},
 
 		AllowedGroupIDsExpr: allowedGroupIDsExpr,
@@ -194,12 +196,14 @@ func (s *Service) setCachedItem(key string, val interface{}, timeout time.Durati
 	s.cacheLock.Lock()
 	defer s.cacheLock.Unlock()
 
-	go func() {
-		time.Sleep(timeout)
-		s.deleteCachedItem(key)
-	}()
+	if existingTimer, exists := s.cacheTimers[key]; exists {
+		existingTimer.Stop()
+	}
 
 	s.cache[key] = val
+	s.cacheTimers[key] = time.AfterFunc(timeout, func() {
+		s.deleteCachedItem(key)
+	})
 }
 
 func (s *Service) deleteCachedItem(key string) {
