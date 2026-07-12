@@ -133,7 +133,7 @@ func (t *messageTracker) onMessageExpired(key string, reason ttlcache.EvictionRe
 		zap.Int64("age_ms", age.Milliseconds()),
 		zap.Int("partition", msg.partition),
 		zap.String("message_id", msg.MessageID),
-		zap.Bool("successfully_produced", msg.state == EndToEndMessageStateProducedSuccessfully),
-		zap.Float64("produce_latency_seconds", msg.produceLatency),
+		zap.Bool("successfully_produced", msg.getState() == EndToEndMessageStateProducedSuccessfully),
+		zap.Float64("produce_latency_seconds", msg.getProduceLatency()),
 	)
 }
