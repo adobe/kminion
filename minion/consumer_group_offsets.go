@@ -31,16 +31,22 @@ func (s *Service) ListAllConsumerGroupOffsetsAdminAPI(ctx context.Context) (map[
 	return s.listConsumerGroupOffsetsBulk(ctx, groupIDs)
 }
 
+// maxConcurrentGroupOffsetRequests bounds how many concurrent OffsetFetch requests are issued when
+// bulk-fetching consumer group offsets, to avoid a thundering herd against Kafka coordinators on
+// clusters with many consumer groups.
+const maxConcurrentGroupOffsetRequests = 50
+
 // listConsumerGroupOffsetsBulk returns a map which has the Consumer group name as key
 func (s *Service) listConsumerGroupOffsetsBulk(ctx context.Context, groups []string) (map[string]*kmsg.OffsetFetchResponse, error) {
-	eg, _ := errgroup.WithContext(ctx)
+	eg, egCtx := errgroup.WithContext(ctx)
+	eg.SetLimit(maxConcurrentGroupOffsetRequests)
 
 	mutex := sync.Mutex{}
 	res := make(map[string]*kmsg.OffsetFetchResponse)
 
 	f := func(group string) func() error {
 		return func() error {
-			offsets, err := s.listConsumerGroupOffsets(ctx, group)
+			offsets, err := s.listConsumerGroupOffsets(egCtx, group)
 			if err != nil {
 				s.logger.Warn("failed to fetch consumer group offsets, inner kafka error",
 					zap.String("consumer_group", group),
