@@ -189,6 +189,12 @@ kminion:
   # KMinion can be configured using environment variables and/or a YAML config. The yaml contents under config will
   # end up in a YAML file which will be mounted into the kminion container.
   # See reference config: https://github.com/cloudhut/kminion/blob/master/docs/reference-config.yaml
+  #
+  # WARNING: anything placed under `config` (including this block's commented example below) is rendered
+  # verbatim into a Kubernetes ConfigMap, which is stored unencrypted and readable by any principal with
+  # configmap get/list RBAC in this namespace. Do NOT put sasl.password, sasl.gssapi.password, tls.passphrase,
+  # tls.key, or oauth client secrets here. Use `deployment.env.secretKeyRefs` below instead, which injects
+  # them from a Kubernetes Secret as environment variables.
   config: {}
 #    kafka:
 #      brokers: [ ]
@@ -207,6 +213,7 @@ kminion:
 #        # Username to use for PLAIN or SCRAM mechanism
 #        username: ""
 #        # Password to use for PLAIN or SCRAM mechanism
+#        # DO NOT set this here -- it lands in a plaintext ConfigMap. Use deployment.env.secretKeyRefs instead.
 #        password: ""
 #        # Mechanism to use for SASL Authentication. Valid values are PLAIN, SCRAM-SHA-256, SCRAM-SHA-512, GSSAPI
 #        mechanism: "PLAIN"
@@ -217,6 +224,7 @@ kminion:
 #          kerberosConfigPath: ""
 #          serviceName: ""
 #          username: ""
+#          # DO NOT set this here -- it lands in a plaintext ConfigMap. Use deployment.env.secretKeyRefs instead.
 #          password: ""
 #          realm: ""
 #      # Whether to retry the initial test connection to Kafka. False will exit with code 1 on error,

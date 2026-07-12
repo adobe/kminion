@@ -10,6 +10,17 @@ you might run into runtime errors for a misconfiguration.
 
 All available input is documented inside of the [values.yaml](./kminion/values.yaml) file.
 
+## Secrets
+
+`kminion.config` is rendered verbatim into a Kubernetes ConfigMap, which is stored unencrypted and readable by
+any principal with `configmap get/list` RBAC in the release namespace. Do not put credentials there — this
+includes `sasl.password`, `sasl.gssapi.password`, `tls.passphrase`, `tls.key`, and OAuth client secrets.
+
+Instead, use `deployment.env.secretKeyRefs` to inject credentials from a Kubernetes Secret as environment
+variables. See the commented example under `deployment.env` in [values.yaml](./kminion/values.yaml), and the
+[reference config](https://github.com/cloudhut/kminion/blob/master/docs/reference-config.yaml) for the
+expected environment variable names.
+
 ## Installing the Helm chart
 
 ```shell
