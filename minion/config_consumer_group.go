@@ -4,12 +4,18 @@ import (
 	"fmt"
 )
 
-const (
-	ConsumerGroupScrapeModeOffsetsTopic string = "offsetsTopic"
-	ConsumerGroupScrapeModeAdminAPI     string = "adminApi"
+type ConsumerGroupScrapeMode string
 
-	ConsumerGroupGranularityTopic     string = "topic"
-	ConsumerGroupGranularityPartition string = "partition"
+const (
+	ConsumerGroupScrapeModeOffsetsTopic ConsumerGroupScrapeMode = "offsetsTopic"
+	ConsumerGroupScrapeModeAdminAPI     ConsumerGroupScrapeMode = "adminApi"
+)
+
+type ConsumerGroupGranularity string
+
+const (
+	ConsumerGroupGranularityTopic     ConsumerGroupGranularity = "topic"
+	ConsumerGroupGranularityPartition ConsumerGroupGranularity = "partition"
 )
 
 type ConsumerGroupConfig struct {
@@ -18,12 +24,12 @@ type ConsumerGroupConfig struct {
 
 	// Mode specifies whether we export consumer group offsets using the Admin API or by consuming the internal
 	// __consumer_offsets topic.
-	ScrapeMode string `koanf:"scrapeMode"`
+	ScrapeMode ConsumerGroupScrapeMode `koanf:"scrapeMode"`
 
 	// Granularity can be per topic or per partition. If you want to reduce the number of exported metric series and
 	// you aren't interested in per partition lags you could choose "topic" where all partition lags will be summed
 	// and only topic lags will be exported.
-	Granularity string `koanf:"granularity"`
+	Granularity ConsumerGroupGranularity `koanf:"granularity"`
 
 	// AllowedGroups are regex strings of group ids that shall be exported
 	AllowedGroupIDs []string `koanf:"allowedGroups"`
