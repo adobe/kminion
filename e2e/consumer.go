@@ -33,6 +33,11 @@ func (s *Service) startConsumeMessages(ctx context.Context, initializedCh chan<-
 	isInitialized := false
 	for {
 		fetches := client.PollFetches(ctx)
+		if ctx.Err() != nil {
+			// Context was cancelled (e.g. kminion is shutting down); PollFetches returns immediately
+			// in this case, so stop here instead of busy-spinning and logging the same error forever.
+			return
+		}
 		if !isInitialized {
 			isInitialized = true
 			initializedCh <- true
