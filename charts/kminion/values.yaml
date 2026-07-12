@@ -145,6 +145,8 @@ daemonset:
 deployment:
   readinessProbe:
     enabled: true
+  livenessProbe:
+    enabled: true
 
   labels: {}
   # Annotations to add to the Deployment resource
