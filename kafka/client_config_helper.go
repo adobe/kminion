@@ -23,6 +23,46 @@ import (
 	krbconfig "github.com/jcmturner/gokrb5/v8/config"
 )
 
+// buildGSSAPIMechanism constructs the Kerberos/GSSAPI SASL mechanism for the given config. It
+// returns an error if authType is not one of USER_AUTH or KEYTAB_AUTH, or if the Kerberos config or
+// keytab file cannot be loaded.
+func buildGSSAPIMechanism(cfg SASLGSSAPIConfig) (sasl.Mechanism, error) {
+	kerbCfg, err := krbconfig.Load(cfg.KerberosConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kerberos config from specified config filepath: %w", err)
+	}
+
+	var krbClient *client.Client
+	switch cfg.AuthType {
+	case "USER_AUTH":
+		krbClient = client.NewWithPassword(
+			cfg.Username,
+			cfg.Realm,
+			cfg.Password,
+			kerbCfg,
+			client.DisablePAFXFAST(!cfg.EnableFast))
+	case "KEYTAB_AUTH":
+		ktb, err := keytab.Load(cfg.KeyTabPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load keytab: %w", err)
+		}
+		krbClient = client.NewWithKeytab(
+			cfg.Username,
+			cfg.Realm,
+			ktb,
+			kerbCfg,
+			client.DisablePAFXFAST(!cfg.EnableFast))
+	default:
+		return nil, fmt.Errorf("kafka.sasl.gssapi.authType must be one of USER_AUTH or KEYTAB_AUTH")
+	}
+
+	return kerberos.Auth{
+		Client:           krbClient,
+		Service:          cfg.ServiceName,
+		PersistAfterAuth: true,
+	}.AsMechanism(), nil
+}
+
 // NewKgoConfig creates a new Config for the Kafka Client as exposed by the franz-go library.
 // If TLS certificates can't be read an error will be returned.
 // logger is only used to print warnings about TLS.
@@ -78,42 +118,11 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 
 		// Kerberos
 		if cfg.SASL.Mechanism == "GSSAPI" {
-			var krbClient *client.Client
-
-			kerbCfg, err := krbconfig.Load(cfg.SASL.GSSAPI.KerberosConfigPath)
+			mechanism, err := buildGSSAPIMechanism(cfg.SASL.GSSAPI)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create kerberos config from specified config filepath: %w", err)
+				return nil, err
 			}
-
-			switch cfg.SASL.GSSAPI.AuthType {
-			case "USER_AUTH:":
-				krbClient = client.NewWithPassword(
-					cfg.SASL.GSSAPI.Username,
-					cfg.SASL.GSSAPI.Realm,
-					cfg.SASL.GSSAPI.Password,
-					kerbCfg,
-					client.DisablePAFXFAST(!cfg.SASL.GSSAPI.EnableFast))
-			case "KEYTAB_AUTH":
-				ktb, err := keytab.Load(cfg.SASL.GSSAPI.KeyTabPath)
-				if err != nil {
-					return nil, fmt.Errorf("failed to load keytab: %w", err)
-				}
-				krbClient = client.NewWithKeytab(
-					cfg.SASL.GSSAPI.Username,
-					cfg.SASL.GSSAPI.Realm,
-					ktb,
-					kerbCfg,
-					client.DisablePAFXFAST(!cfg.SASL.GSSAPI.EnableFast))
-			}
-			if krbClient == nil {
-				return nil, fmt.Errorf("kafka.sasl.gssapi.authType must be one of USER_AUTH or KEYTAB_AUTH")
-			}
-			kerberosMechanism := kerberos.Auth{
-				Client:           krbClient,
-				Service:          cfg.SASL.GSSAPI.ServiceName,
-				PersistAfterAuth: true,
-			}.AsMechanism()
-			opts = append(opts, kgo.SASL(kerberosMechanism))
+			opts = append(opts, kgo.SASL(mechanism))
 		}
 
 		// OAuthBearer
