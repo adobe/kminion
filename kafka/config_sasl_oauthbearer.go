@@ -89,9 +89,15 @@ func (c *OAuthBearerConfig) getTokenWithTimeout(ctx context.Context, timeout tim
 
 // Validate validates the OAuthBearerConfig
 func (c *OAuthBearerConfig) Validate() error {
-	// Common validation for all OAuth types
 	if c.TokenEndpoint == "" {
 		return fmt.Errorf("OAuthBearer token endpoint is not specified")
+	}
+	parsedURL, err := url.Parse(c.TokenEndpoint)
+	if err != nil {
+		return fmt.Errorf("OAuthBearer token endpoint is not a valid URL: %w", err)
+	}
+	if parsedURL.Scheme != "https" {
+		return fmt.Errorf("OAuthBearer token endpoint must use https, got scheme '%s'", parsedURL.Scheme)
 	}
 	if c.ClientID == "" || c.ClientSecret == "" {
 		return fmt.Errorf("OAuthBearer client credentials are not specified")

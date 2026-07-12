@@ -189,3 +189,14 @@ func TestOAuthBearerConfig_GetToken_RespectsTimeout(t *testing.T) {
 	_, err := cfg.getTokenWithTimeout(context.Background(), 50*time.Millisecond)
 	require.Error(t, err, "expected a client-side timeout error when the token endpoint is slower than the configured timeout")
 }
+
+func TestOAuthBearerConfig_Validate_RejectsNonHTTPSEndpoint(t *testing.T) {
+	config := OAuthBearerConfig{
+		TokenEndpoint: "http://oauth.example.com/token",
+		ClientID:      "test-client",
+		ClientSecret:  "test-secret",
+	}
+	err := config.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "https")
+}
