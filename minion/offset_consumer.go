@@ -49,6 +49,21 @@ func (s *Service) startConsumingOffsets(ctx context.Context) {
 	}
 }
 
+// partitionLag computes how far behind (in messages) a partition's offset consumer is. hasConsumed
+// =false means nothing has been consumed from this partition yet (as opposed to having consumed
+// record 0), which must not be treated as caught up -- a Go map's zero-value lookup can't tell the
+// two cases apart, so callers must pass the map's "ok" result through as hasConsumed.
+func partitionLag(highWaterMark int64, consumedOffset int64, hasConsumed bool) int64 {
+	if !hasConsumed {
+		consumedOffset = -1
+	}
+	lag := highWaterMark - consumedOffset
+	if lag < 0 {
+		lag = 0
+	}
+	return lag
+}
+
 // checkIfConsumerLagIsCaughtUp fetches the newest partition offsets for all partitions in the __consumer_offsets
 // topic and compares these against the last consumed messages from our offset consumer. If the consumed offsets are
 // higher than the partition offsets this means we caught up the initial lag and can mark our storage as ready. A ready
@@ -121,27 +136,25 @@ func (s *Service) checkIfConsumerLagIsCaughtUp(ctx context.Context) {
 				s.logger.Warn("failed to check if consumer lag on offsets metadataReqTopic is caught up because high "+
 					"watermark request failed, with an inner error",
 					zap.Error(err))
+				continue
 			}
 
 			highWaterMark := partition.Offset - 1
-			consumedOffset := consumedOffsets[partition.Partition]
-			partitionLag := highWaterMark - consumedOffset
-			if partitionLag < 0 {
-				partitionLag = 0
-			}
+			consumedOffset, hasConsumed := consumedOffsets[partition.Partition]
+			partLag := partitionLag(highWaterMark, consumedOffset, hasConsumed)
 
-			if partitionLag > 0 {
+			if partLag > 0 {
 				partitionsLagging = append(partitionsLagging, laggingParition{
 					Name: topicRes.Topic,
 					Id:   partition.Partition,
-					Lag:  partitionLag,
+					Lag:  partLag,
 				})
-				totalLag += partitionLag
+				totalLag += partLag
 				s.logger.Debug("consumer_offsets metadataReqTopic lag has not been caught up yet",
 					zap.Int32("partition_id", partition.Partition),
 					zap.Int64("high_water_mark", highWaterMark),
 					zap.Int64("consumed_offset", consumedOffset),
-					zap.Int64("partition_lag", partitionLag))
+					zap.Int64("partition_lag", partLag))
 				isReady = false
 				continue
 			}
