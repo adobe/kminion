@@ -189,3 +189,29 @@ func TestOAuthBearerConfig_GetToken_RespectsTimeout(t *testing.T) {
 	_, err := cfg.getTokenWithTimeout(context.Background(), 50*time.Millisecond)
 	require.Error(t, err, "expected a client-side timeout error when the token endpoint is slower than the configured timeout")
 }
+
+func TestOAuthBearerConfig_Validate_RejectsNonHTTPSEndpoint(t *testing.T) {
+	config := OAuthBearerConfig{
+		TokenEndpoint: "http://oauth.example.com/token",
+		ClientID:      "test-client",
+		ClientSecret:  "test-secret",
+	}
+	err := config.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "https")
+}
+
+func TestOAuthBearerConfig_Validate_AllowsLoopbackHTTP(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://localhost:8080/token",
+		"http://127.0.0.1/token",
+		"http://[::1]:9000/token",
+	} {
+		config := OAuthBearerConfig{
+			TokenEndpoint: endpoint,
+			ClientID:      "test-client",
+			ClientSecret:  "test-secret",
+		}
+		require.NoErrorf(t, config.Validate(), "loopback http endpoint %q should be allowed", endpoint)
+	}
+}
