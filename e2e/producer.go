@@ -13,7 +13,7 @@ import (
 
 // produceMessagesToAllPartitions sends an EndToEndMessage to every partition on the given topic
 func (s *Service) produceMessagesToAllPartitions(ctx context.Context) {
-	for i := 0; i < s.partitionCount; i++ {
+	for i := 0; i < int(s.partitionCount.Load()); i++ {
 		s.produceMessage(ctx, i)
 	}
 }
