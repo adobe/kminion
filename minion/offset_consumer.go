@@ -54,8 +54,15 @@ func (s *Service) startConsumingOffsets(ctx context.Context) {
 // higher than the partition offsets this means we caught up the initial lag and can mark our storage as ready. A ready
 // store will start to expose consumer group offsets.
 func (s *Service) checkIfConsumerLagIsCaughtUp(ctx context.Context) {
+	ticker := time.NewTicker(12 * time.Second)
+	defer ticker.Stop()
+
 	for {
-		time.Sleep(12 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		s.logger.Debug("checking if lag in consumer offsets metadataReqTopic is caught up")
 
 		// 1. Get metadataReqTopic high watermarks for __consumer_offsets metadataReqTopic
@@ -67,6 +74,9 @@ func (s *Service) checkIfConsumerLagIsCaughtUp(ctx context.Context) {
 
 		res, err := metadataReq.RequestWith(ctx, s.client)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			s.logger.Warn("failed to check if consumer lag on offsets metadataReqTopic is caught up because metadata request failed",
 				zap.Error(err))
 			continue
@@ -92,6 +102,9 @@ func (s *Service) checkIfConsumerLagIsCaughtUp(ctx context.Context) {
 		offsetReq.Topics = topicReqs
 		highMarksRes, err := offsetReq.RequestWith(ctx, s.client)
 		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
 			s.logger.Warn("failed to check if consumer lag on offsets metadataReqTopic is caught up because high watermark request failed",
 				zap.Error(err))
 			continue
@@ -103,7 +116,11 @@ func (s *Service) checkIfConsumerLagIsCaughtUp(ctx context.Context) {
 
 		// 3. Check if high watermarks have been consumed. To avoid a race condition here we will wait some time before
 		// comparing, so that the consumer has enough time to catch up to the new high watermarks we just fetched.
-		time.Sleep(3 * time.Second)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
 		consumedOffsets := s.storage.getConsumedOffsets()
 		topicRes := highMarksRes.Topics[0]
 		isReady := true
