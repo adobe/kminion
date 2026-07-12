@@ -102,6 +102,15 @@ spec:
               port: {{.Values.service.port}}
             initialDelaySeconds: 10
           {{- end }}
+          {{- if .Values.deployment.livenessProbe.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /ready
+              port: {{.Values.service.port}}
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            failureThreshold: 6
+          {{- end }}
         {{- with .Values.deployment.extraContainers }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
