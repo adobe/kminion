@@ -27,6 +27,7 @@ type groupTracker struct {
 	client                 *kgo.Client          // kafka client
 	groupId                string               // our own groupId
 	potentiallyEmptyGroups map[string]time.Time // groupName -> utc timestamp when the group was first seen
+	deletionDisabled       bool                 // set once a delete attempt returns GroupAuthorizationFailed
 }
 
 func newGroupTracker(cfg Config, logger *zap.Logger, client *kgo.Client, groupID string) *groupTracker {
@@ -37,6 +38,13 @@ func newGroupTracker(cfg Config, logger *zap.Logger, client *kgo.Client, groupID
 		groupId:                groupID,
 		potentiallyEmptyGroups: make(map[string]time.Time),
 	}
+}
+
+// shouldAttemptGroupDeletion reports whether checkAndDeleteOldConsumerGroups should attempt to
+// delete groupsToDelete, given whether deletion was previously disabled due to an authorization
+// failure.
+func shouldAttemptGroupDeletion(deletionDisabled bool, groupsToDelete []string) bool {
+	return !deletionDisabled && len(groupsToDelete) > 0
 }
 
 func (g *groupTracker) start(ctx context.Context) {
@@ -127,7 +135,11 @@ func (g *groupTracker) checkAndDeleteOldConsumerGroups(ctx context.Context) erro
 	}
 
 	// actually delete the groups we've decided to delete
-	if len(groupsToDelete) == 0 {
+	if !shouldAttemptGroupDeletion(g.deletionDisabled, groupsToDelete) {
+		if g.deletionDisabled && len(groupsToDelete) > 0 {
+			g.logger.Debug("skipping deletion of old consumer groups because a previous attempt was not authorized",
+				zap.Int("groups_pending_deletion", len(groupsToDelete)))
+		}
 		return nil
 	}
 
@@ -168,6 +180,7 @@ func (g *groupTracker) checkAndDeleteOldConsumerGroups(ctx context.Context) erro
 	g.logger.Info("deleted old consumer groups", zap.Strings("deleted_groups", deletedGroups))
 
 	if foundNotAuthorizedError {
+		g.deletionDisabled = true
 		g.logger.Info("disabling trying to delete old kminion consumer-groups since one of the last delete results had an 'GroupAuthorizationFailed' error")
 	}
 
