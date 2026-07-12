@@ -33,6 +33,9 @@ jobs:
       - name: Run integration tests
         run: make e2e-test
 
+      - name: Verify graceful shutdown on SIGTERM
+        run: make e2e-test-shutdown
+
       - name: Show logs on failure
         if: failure()
         run: |

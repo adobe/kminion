@@ -1,4 +1,4 @@
-.PHONY: help build test e2e-setup e2e-start e2e-stop e2e-test e2e-cleanup e2e-full
+.PHONY: help build test e2e-setup e2e-start e2e-stop e2e-test e2e-test-shutdown e2e-cleanup e2e-full
 
 help: ## Show this help message
 	@echo 'Usage: make [target]'
@@ -31,6 +31,10 @@ e2e-test: ## Run E2E integration tests (requires Kafka and KMinion to be running
 	@chmod +x e2e/bin/integration-test.sh
 	./e2e/bin/integration-test.sh
 
+e2e-test-shutdown: ## Verify KMinion shuts down gracefully on SIGTERM (requires KMinion to be running)
+	@chmod +x e2e/bin/test-graceful-shutdown.sh
+	./e2e/bin/test-graceful-shutdown.sh
+
 e2e-cleanup: ## Stop and cleanup Kafka cluster and KMinion
 	@chmod +x e2e/bin/start-kminion.sh e2e/bin/setup-kafka.sh
 	./e2e/bin/start-kminion.sh stop || true
@@ -41,7 +45,8 @@ e2e-full: e2e-setup ## Run full E2E test suite (setup, build, start, test, clean
 	@trap '$(MAKE) e2e-cleanup' EXIT; \
 	$(MAKE) build && \
 	$(MAKE) e2e-start && \
-	$(MAKE) e2e-test
+	$(MAKE) e2e-test && \
+	$(MAKE) e2e-test-shutdown
 
 
 IMAGE ?= kminion:latest
