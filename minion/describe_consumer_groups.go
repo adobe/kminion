@@ -32,16 +32,10 @@ func (s *Service) listConsumerGroupsCached(ctx context.Context) (*GroupsInfo, er
 		if err != nil {
 			return nil, err
 		}
-		allowedGroups := make([]kmsg.ListGroupsResponseGroup, 0)
-
-		for i := range res.Groups {
-			if s.IsGroupAllowed(res.Groups[i].Group, res.Groups[i].GroupState) {
-				allowedGroups = append(allowedGroups, res.Groups[i])
-			}
-		}
+		total, allowedGroups := s.filterAllowedGroups(res.Groups)
 		res.Groups = allowedGroups
 		groups := &GroupsInfo{
-			AllGroupsCount: len(res.Groups),
+			AllGroupsCount: total,
 			AllowedGroups:  res,
 		}
 		s.setCachedItem(keyAllowedGroups, groups, 120*time.Second)
@@ -53,6 +47,20 @@ func (s *Service) listConsumerGroupsCached(ctx context.Context) (*GroupsInfo, er
 	}
 
 	return groups.(*GroupsInfo), nil
+}
+
+// filterAllowedGroups splits groups into the total count (before filtering) and the subset allowed
+// by IsGroupAllowed. Keeping the total separate from the filtered slice prevents the count from
+// silently becoming "count of allowed groups" if the filtering logic changes later.
+func (s *Service) filterAllowedGroups(groups []kmsg.ListGroupsResponseGroup) (total int, allowed []kmsg.ListGroupsResponseGroup) {
+	total = len(groups)
+	allowed = make([]kmsg.ListGroupsResponseGroup, 0, total)
+	for i := range groups {
+		if s.IsGroupAllowed(groups[i].Group, groups[i].GroupState) {
+			allowed = append(allowed, groups[i])
+		}
+	}
+	return total, allowed
 }
 
 func (s *Service) listConsumerGroups(ctx context.Context) (*kmsg.ListGroupsResponse, error) {
