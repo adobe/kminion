@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -89,9 +90,20 @@ func (c *OAuthBearerConfig) getTokenWithTimeout(ctx context.Context, timeout tim
 
 // Validate validates the OAuthBearerConfig
 func (c *OAuthBearerConfig) Validate() error {
-	// Common validation for all OAuth types
 	if c.TokenEndpoint == "" {
 		return fmt.Errorf("OAuthBearer token endpoint is not specified")
+	}
+	parsedURL, err := url.Parse(c.TokenEndpoint)
+	if err != nil {
+		return fmt.Errorf("OAuthBearer token endpoint is not a valid URL: %w", err)
+	}
+	// Require https so the client credentials aren't sent in cleartext. Allow plaintext http only
+	// for loopback hosts (localhost/127.0.0.1/::1), which is useful for local development and tests
+	// where there's no network exposure.
+	isHTTPS := parsedURL.Scheme == "https"
+	isLoopbackHTTP := parsedURL.Scheme == "http" && isLoopbackHost(parsedURL.Hostname())
+	if !isHTTPS && !isLoopbackHTTP {
+		return fmt.Errorf("OAuthBearer token endpoint must use https (http is allowed only for loopback hosts like localhost/127.0.0.1), got scheme '%s' host '%s'", parsedURL.Scheme, parsedURL.Hostname())
 	}
 	if c.ClientID == "" || c.ClientSecret == "" {
 		return fmt.Errorf("OAuthBearer client credentials are not specified")
@@ -111,6 +123,18 @@ func (c *OAuthBearerConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// isLoopbackHost reports whether host refers to the local machine, so that plaintext http may be
+// permitted for local development / testing while still requiring https for any remote endpoint.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // OAuthBearerType represents the type of OAuth provider

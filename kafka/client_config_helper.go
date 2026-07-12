@@ -215,6 +215,10 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 			certificates = []tls.Certificate{tlsCert}
 		}
 
+		if cfg.TLS.InsecureSkipTLSVerify {
+			logger.Warn("TLS certificate verification is disabled (insecureSkipTlsVerify=true); " +
+				"the connection to Kafka is vulnerable to man-in-the-middle attacks")
+		}
 		tlsDialer := &tls.Dialer{
 			NetDialer: &net.Dialer{Timeout: 10 * time.Second},
 			Config: &tls.Config{
@@ -238,18 +242,15 @@ func decryptPrivateKey(keyPEM []byte, passphrase string, logger *zap.Logger) ([]
 		return nil, fmt.Errorf("failed to decode PEM block containing private key")
 	}
 
-	// Check if it's an encrypted PKCS#8 key (modern, secure)
+	// PKCS#8 encrypted keys ("ENCRYPTED PRIVATE KEY" PEM blocks) use PBES2, which Go's stdlib
+	// x509.DecryptPEMBlock does not support (it only implements the legacy RFC1423 PEM encryption
+	// scheme). Rather than attempt a decryption that will always fail while confusingly nudging
+	// users toward the insecure legacy format, fail fast with a clear, actionable error.
 	if block.Type == "ENCRYPTED PRIVATE KEY" {
-		// PKCS#8 encrypted keys should be decrypted using x509.ParsePKCS8PrivateKey
-		// which doesn't support password-based decryption directly in stdlib.
-		// For now, we'll use the legacy method with nolint for PKCS#8 as well.
-		// TODO: Consider using golang.org/x/crypto/pkcs12 for proper PKCS#8 support
-		decrypted, err := x509.DecryptPEMBlock(block, []byte(passphrase)) //nolint:staticcheck // No stdlib alternative for PKCS#8 password decryption
-		if err != nil {
-			return nil, fmt.Errorf("failed to decrypt PKCS#8 private key: %w", err)
-		}
-		// Re-encode as unencrypted PKCS#8
-		return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: decrypted}), nil
+		return nil, fmt.Errorf("PKCS#8 encrypted private keys are not supported for password-based " +
+			"decryption; convert your key to the legacy encrypted format instead: " +
+			"openssl pkcs8 -topk8 -v1 PBE-SHA1-3DES -in your_key.pem -out legacy_key.pem, or provide " +
+			"an unencrypted key file")
 	}
 
 	// Check if it's a legacy encrypted PEM block (insecure, deprecated)
