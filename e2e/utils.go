@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"math"
 	"time"
 
@@ -18,8 +19,11 @@ func createHistogramBuckets(maxLatency time.Duration) []float64 {
 	// Divide by 10 for the argument because the base is counted as 20ms and we want to normalize it as base 2 instead of 20
 	// +2 because it starts at 5ms or 0.005 sec, to account 5ms and 10ms before it goes to the base which in this case is 0.02 sec or 20ms
 	// and another +1 to account for decimal points on int parsing
-	latencyCount := math.Logb(float64(maxLatency.Milliseconds() / 10))
+	latencyCount := math.Logb(float64(maxLatency.Milliseconds()) / 10)
 	count := int(latencyCount) + 3
+	if count < 1 {
+		count = 1
+	}
 	bucket := prometheus.ExponentialBuckets(0.005, 2, count)
 
 	return bucket
@@ -37,7 +41,7 @@ func containsStr(ar []string, x string) (bool, int) {
 // logCommitErrors logs all errors in commit response and returns a well formatted error code if there was one
 func (s *Service) logCommitErrors(r *kmsg.OffsetCommitResponse, err error) string {
 	if err != nil {
-		if err == context.DeadlineExceeded {
+		if errors.Is(err, context.DeadlineExceeded) {
 			s.logger.Warn("offset commit failed because SLA has been exceeded")
 			return "OFFSET_COMMIT_SLA_EXCEEDED"
 		}
