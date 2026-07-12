@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"syscall"
 
 	"github.com/cloudhut/kminion/v2/e2e"
 	"github.com/cloudhut/kminion/v2/kafka"
@@ -56,7 +57,7 @@ func main() {
 		logger.Fatal("failed to set GOMAXPROCS automatically", zap.Error(err))
 	}
 	// Setup context that stops when the application receives an interrupt signal
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	wrappedRegisterer := promclient.WrapRegistererWithPrefix(cfg.Exporter.Namespace+"_", promclient.DefaultRegisterer)
