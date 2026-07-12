@@ -60,7 +60,7 @@ func (g *groupTracker) start(ctx context.Context) {
 			childCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 			err := g.checkAndDeleteOldConsumerGroups(childCtx)
 			if err != nil {
-				g.logger.Error("failed to check for old consumer groups: %w", zap.Error(err))
+				g.logger.Error("failed to check for old consumer groups", zap.Error(err))
 			}
 			cancel()
 		}
