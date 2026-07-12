@@ -45,3 +45,9 @@ services:
     environment:
       KAFKA_BROKERS: kafka:29092
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/ready"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
