@@ -4,14 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/pkg/errors"
 	"github.com/twmb/franz-go/pkg/kmsg"
 )
 
 func (s *Service) GetTopicConfigs(ctx context.Context) (*kmsg.DescribeConfigsResponse, error) {
 	metadata, err := s.GetMetadataCached(ctx)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get metadata")
+		return nil, fmt.Errorf("failed to get metadata: %w", err)
 	}
 
 	req := kmsg.NewDescribeConfigsRequest()
