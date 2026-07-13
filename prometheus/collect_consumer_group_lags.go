@@ -54,6 +54,15 @@ func (e *Exporter) collectConsumerGroupLagsOffsetTopic(_ context.Context, ch cha
 		offsetCommits := 0
 
 		for topicName, topic := range group {
+			topicMark, exists := marks[topicName]
+			if !exists {
+				// We have no watermarks for this topic at all, so we can't compute a meaningful lag.
+				// Skip it entirely rather than emitting a misleading topic-lag of 0.
+				e.logger.Warn("consumer group has committed offsets on a topic we don't have watermarks for",
+					zap.String("consumer_group", groupName),
+					zap.String("topic_name", topicName))
+				continue
+			}
 			topicLag := float64(0)
 			topicOffsetSum := float64(0)
 			for partitionID, partition := range topic {
@@ -63,11 +72,6 @@ func (e *Exporter) collectConsumerGroupLagsOffsetTopic(_ context.Context, ch cha
 					zap.Int32("partition_id", partitionID),
 					zap.Int64("group_offset", partition.Value.Offset))
 
-				topicMark, exists := marks[topicName]
-				if !exists {
-					childLogger.Warn("consumer group has committed offsets on a topic we don't have watermarks for")
-					break // We can stop trying to find any other offsets for that topic so let's quit this loop
-				}
 				partitionMark, exists := topicMark[partitionID]
 				if !exists {
 					childLogger.Warn("consumer group has committed offsets on a partition we don't have watermarks for")
@@ -136,6 +140,16 @@ func (e *Exporter) collectConsumerGroupLagsAdminAPI(ctx context.Context, ch chan
 			continue
 		}
 		for _, topic := range offsetRes.Topics {
+			topicMark, exists := marks[topic.Topic]
+			if !exists {
+				// We have no watermarks for this topic at all, so we can't compute a meaningful lag.
+				// Skip it entirely rather than emitting a misleading topic-lag of 0.
+				e.logger.Warn("consumer group has committed offsets on a topic we don't have watermarks for",
+					zap.String("consumer_group", groupName),
+					zap.String("topic_name", topic.Topic))
+				isOk = false
+				continue
+			}
 			topicLag := float64(0)
 			topicOffsetSum := float64(0)
 			for _, partition := range topic.Partitions {
@@ -153,12 +167,6 @@ func (e *Exporter) collectConsumerGroupLagsAdminAPI(ctx context.Context, ch chan
 					zap.String("topic_name", topic.Topic),
 					zap.Int32("partition_id", partition.Partition),
 					zap.Int64("group_offset", partition.Offset))
-				topicMark, exists := marks[topic.Topic]
-				if !exists {
-					childLogger.Warn("consumer group has committed offsets on a topic we don't have watermarks for")
-					isOk = false
-					break // We can stop trying to find any other offsets for that topic so let's quit this loop
-				}
 				partitionMark, exists := topicMark[partition.Partition]
 				if !exists {
 					childLogger.Warn("consumer group has committed offsets on a partition we don't have watermarks for")
