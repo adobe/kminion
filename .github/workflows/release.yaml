@@ -77,7 +77,7 @@ jobs:
           push: ${{ startsWith(github.ref, 'refs/tags/') }}
       - name: Install cosign
         if: startsWith(github.ref, 'refs/tags/')
-        uses: sigstore/cosign-installer@v3
+        uses: sigstore/cosign-installer@v4.1.2
       - name: Sign the image (keyless)
         if: startsWith(github.ref, 'refs/tags/')
         env:
