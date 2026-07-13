@@ -89,7 +89,7 @@ func main() {
 			wrappedRegisterer,
 		)
 		if err != nil {
-			logger.Fatal("failed to create end-to-end monitoring service: %w", zap.Error(err))
+			logger.Fatal("failed to create end-to-end monitoring service", zap.Error(err))
 		}
 
 		if err = e2eService.Start(ctx); err != nil {
