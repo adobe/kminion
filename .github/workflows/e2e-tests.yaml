@@ -27,6 +27,9 @@ jobs:
       - name: Build KMinion
         run: make build
 
+      - name: Seed consumer groups (exercise batched multi-group OffsetFetch)
+        run: make e2e-seed
+
       - name: Start KMinion with E2E tests
         run: make e2e-start
 
