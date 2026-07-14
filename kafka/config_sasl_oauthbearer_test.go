@@ -1,7 +1,15 @@
 package kafka
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestOAuthBearerConfig_GenericOAuth(t *testing.T) {
@@ -145,5 +153,65 @@ func TestSASLConfig_ValidateOAuthBearer_UnknownType(t *testing.T) {
 	err := config.Validate()
 	if err == nil {
 		t.Error("Expected error for unknown OAuth type")
+	}
+}
+
+func TestOAuthBearerConfig_GetToken_Success(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "test-token-123"})
+	}))
+	defer server.Close()
+
+	cfg := OAuthBearerConfig{
+		TokenEndpoint: server.URL,
+		ClientID:      "client",
+		ClientSecret:  "secret",
+	}
+
+	token, err := cfg.getToken(context.Background())
+	require.NoError(t, err)
+	assert.Equal(t, "test-token-123", token)
+}
+
+func TestOAuthBearerConfig_GetToken_RespectsTimeout(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_ = json.NewEncoder(w).Encode(map[string]string{"access_token": "too-late"})
+	}))
+	defer server.Close()
+
+	cfg := OAuthBearerConfig{
+		TokenEndpoint: server.URL,
+		ClientID:      "client",
+		ClientSecret:  "secret",
+	}
+
+	_, err := cfg.getTokenWithTimeout(context.Background(), 50*time.Millisecond)
+	require.Error(t, err, "expected a client-side timeout error when the token endpoint is slower than the configured timeout")
+}
+
+func TestOAuthBearerConfig_Validate_RejectsNonHTTPSEndpoint(t *testing.T) {
+	config := OAuthBearerConfig{
+		TokenEndpoint: "http://oauth.example.com/token",
+		ClientID:      "test-client",
+		ClientSecret:  "test-secret",
+	}
+	err := config.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "https")
+}
+
+func TestOAuthBearerConfig_Validate_AllowsLoopbackHTTP(t *testing.T) {
+	for _, endpoint := range []string{
+		"http://localhost:8080/token",
+		"http://127.0.0.1/token",
+		"http://[::1]:9000/token",
+	} {
+		config := OAuthBearerConfig{
+			TokenEndpoint: endpoint,
+			ClientID:      "test-client",
+			ClientSecret:  "test-secret",
+		}
+		require.NoErrorf(t, config.Validate(), "loopback http endpoint %q should be allowed", endpoint)
 	}
 }

@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"syscall"
+	"time"
 
 	"github.com/cloudhut/kminion/v2/e2e"
 	"github.com/cloudhut/kminion/v2/kafka"
@@ -56,7 +58,7 @@ func main() {
 		logger.Fatal("failed to set GOMAXPROCS automatically", zap.Error(err))
 	}
 	// Setup context that stops when the application receives an interrupt signal
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	wrappedRegisterer := promclient.WrapRegistererWithPrefix(cfg.Exporter.Namespace+"_", promclient.DefaultRegisterer)
@@ -87,7 +89,7 @@ func main() {
 			wrappedRegisterer,
 		)
 		if err != nil {
-			logger.Fatal("failed to create end-to-end monitoring service: %w", zap.Error(err))
+			logger.Fatal("failed to create end-to-end monitoring service", zap.Error(err))
 		}
 
 		if err = e2eService.Start(ctx); err != nil {
@@ -116,7 +118,10 @@ func main() {
 
 	// Start HTTP server
 	address := net.JoinHostPort(cfg.Exporter.Host, strconv.Itoa(cfg.Exporter.Port))
-	srv := &http.Server{Addr: address}
+	srv := &http.Server{
+		Addr:              address,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
 		if err := srv.Shutdown(context.Background()); err != nil {

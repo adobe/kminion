@@ -5,9 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 // OAuthBearerConfig represents the OAUTHBEARER SASL config with support for different providers
@@ -31,8 +33,16 @@ type OAuthAdditionalConfig struct {
 	ClientCode string `koanf:"clientCode"`
 }
 
+// defaultOAuthTokenTimeout bounds how long a single generic OAuth token request may take. Without
+// this, a stalled token endpoint would block the SASL auth callback indefinitely.
+const defaultOAuthTokenTimeout = 30 * time.Second
+
 // same as AcquireToken in Console https://github.com/redpanda-data/console/blob/master/backend/pkg/config/kafka_sasl_oauth.go#L56
 func (c *OAuthBearerConfig) getToken(ctx context.Context) (string, error) {
+	return c.getTokenWithTimeout(ctx, defaultOAuthTokenTimeout)
+}
+
+func (c *OAuthBearerConfig) getTokenWithTimeout(ctx context.Context, timeout time.Duration) (string, error) {
 	authHeaderValue := base64.StdEncoding.EncodeToString([]byte(c.ClientID + ":" + c.ClientSecret))
 
 	queryParams := url.Values{
@@ -50,7 +60,7 @@ func (c *OAuthBearerConfig) getToken(ctx context.Context) (string, error) {
 	req.Header.Set("Authorization", "Basic "+authHeaderValue)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
-	client := &http.Client{}
+	client := &http.Client{Timeout: timeout}
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -80,9 +90,20 @@ func (c *OAuthBearerConfig) getToken(ctx context.Context) (string, error) {
 
 // Validate validates the OAuthBearerConfig
 func (c *OAuthBearerConfig) Validate() error {
-	// Common validation for all OAuth types
 	if c.TokenEndpoint == "" {
 		return fmt.Errorf("OAuthBearer token endpoint is not specified")
+	}
+	parsedURL, err := url.Parse(c.TokenEndpoint)
+	if err != nil {
+		return fmt.Errorf("OAuthBearer token endpoint is not a valid URL: %w", err)
+	}
+	// Require https so the client credentials aren't sent in cleartext. Allow plaintext http only
+	// for loopback hosts (localhost/127.0.0.1/::1), which is useful for local development and tests
+	// where there's no network exposure.
+	isHTTPS := parsedURL.Scheme == "https"
+	isLoopbackHTTP := parsedURL.Scheme == "http" && isLoopbackHost(parsedURL.Hostname())
+	if !isHTTPS && !isLoopbackHTTP {
+		return fmt.Errorf("OAuthBearer token endpoint must use https (http is allowed only for loopback hosts like localhost/127.0.0.1), got scheme '%s' host '%s'", parsedURL.Scheme, parsedURL.Hostname())
 	}
 	if c.ClientID == "" || c.ClientSecret == "" {
 		return fmt.Errorf("OAuthBearer client credentials are not specified")
@@ -102,6 +123,18 @@ func (c *OAuthBearerConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// isLoopbackHost reports whether host refers to the local machine, so that plaintext http may be
+// permitted for local development / testing while still requiring https for any remote endpoint.
+func isLoopbackHost(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 // OAuthBearerType represents the type of OAuth provider

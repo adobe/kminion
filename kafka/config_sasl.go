@@ -36,8 +36,10 @@ func (c *SASLConfig) Validate() error {
 	}
 
 	switch c.Mechanism {
-	case SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512, SASLMechanismGSSAPI:
-		// Valid and supported
+	case SASLMechanismPlain, SASLMechanismScramSHA256, SASLMechanismScramSHA512:
+		// Valid and supported, no further config validation needed
+	case SASLMechanismGSSAPI:
+		return c.GSSAPI.Validate()
 	case SASLMechanismOAuthBearer:
 		return c.OAuthBearer.Validate()
 	default:

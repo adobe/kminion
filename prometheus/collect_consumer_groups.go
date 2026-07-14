@@ -72,22 +72,24 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			topicPartitionsAssigned := make(map[string]int)
 			membersWithEmptyAssignment := 0
 			failedAssignmentsDecode := 0
+			var lastAssignmentDecodeErr error
 			for _, member := range group.Members {
 				if len(member.MemberAssignment) == 0 {
 					membersWithEmptyAssignment++
 					continue
 				}
 
-				kassignment, err := decodeMemberAssignments(group.ProtocolType, member)
-				if err != nil {
+				kassignment, decodeErr := decodeMemberAssignments(group.ProtocolType, member)
+				if decodeErr != nil {
 					e.logger.Debug("failed to decode consumer group member assignment, internal kafka error",
-						zap.Error(err),
+						zap.Error(decodeErr),
 						zap.String("group_id", group.Group),
 						zap.String("client_id", member.ClientID),
 						zap.String("member_id", member.MemberID),
 						zap.String("client_host", member.ClientHost),
 					)
 					failedAssignmentsDecode++
+					lastAssignmentDecodeErr = decodeErr
 					continue
 				}
 				if kassignment == nil {
@@ -106,7 +108,7 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 
 			if failedAssignmentsDecode > 0 {
 				e.logger.Error("failed to decode consumer group member assignment, internal kafka error",
-					zap.Error(err),
+					zap.Error(lastAssignmentDecodeErr),
 					zap.String("group_id", group.Group),
 					zap.Int("assignment_decode_failures", failedAssignmentsDecode),
 				)

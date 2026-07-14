@@ -13,6 +13,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/oauth"
 	"go.uber.org/zap"
+	"golang.org/x/sync/singleflight"
 )
 
 const (
@@ -70,6 +71,10 @@ type AdobeImsOAuthBearer struct {
 	tokenEndpoint string
 	client        *ims.Client
 	logger        *zap.Logger
+
+	// refreshGroup de-duplicates concurrent token refreshes: a burst of SASL auth callbacks near
+	// expiry collapses into a single in-flight IMS refresh whose result the others share.
+	refreshGroup singleflight.Group
 
 	// Token state protected by mutex
 	mu           sync.RWMutex
@@ -261,33 +266,57 @@ func NewAdobeImsOAuthBearer(clientID, clientSecret, clientCode, tokenEndpoint st
 }
 
 // refreshTokenIfNeeded checks if the token needs refresh and refreshes it if necessary.
-// It refreshes the token when it expires in less than 15 minutes.
-// Uses adaptive retry logic: the closer to expiration, the more aggressive the retries.
+// It refreshes the token when it expires in less than 15 minutes. Concurrent callers are
+// de-duplicated via singleflight so a burst of SASL auth callbacks near expiry triggers at most one
+// in-flight IMS refresh; the rest wait for and share its result instead of each hammering IMS.
 func (a *AdobeImsOAuthBearer) refreshTokenIfNeeded(ctx context.Context) error {
 	a.mu.RLock()
-	timeUntilExpiry := time.Until(a.expiresAt)
-	needsRefresh := timeUntilExpiry < tokenRefreshThreshold
-	currentRefreshToken := a.refreshToken
+	needsRefresh := time.Until(a.expiresAt) < tokenRefreshThreshold
 	a.mu.RUnlock()
 
 	if !needsRefresh {
 		return nil
 	}
 
-	// Upgrade to write lock for refresh
-	a.mu.Lock()
-	defer a.mu.Unlock()
+	// The shared refresh runs on a detached, bounded context so that one caller cancelling (e.g. a
+	// Kafka connection going away) does not abort the refresh the other callers are waiting on.
+	ch := a.refreshGroup.DoChan("refresh", func() (interface{}, error) {
+		refreshCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), initialTokenTimeout)
+		defer cancel()
+		return nil, a.doRefresh(refreshCtx)
+	})
 
-	// Double-check after acquiring write lock (another goroutine might have refreshed)
-	timeUntilExpiry = time.Until(a.expiresAt)
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case res := <-ch:
+		return res.Err
+	}
+}
+
+// doRefresh performs the actual IMS token refresh with adaptive retry/backoff and swaps the new
+// token state in under the write lock. It re-checks the expiry first so that a refresh already
+// completed by a prior singleflight winner is skipped. Uses adaptive retry logic: the closer to
+// expiration, the more aggressive the retries.
+func (a *AdobeImsOAuthBearer) doRefresh(ctx context.Context) error {
+	a.mu.RLock()
+	timeUntilExpiry := time.Until(a.expiresAt)
+	currentRefreshToken := a.refreshToken
+	a.mu.RUnlock()
+
+	// Another refresh already renewed the token before this flight started.
 	if timeUntilExpiry >= tokenRefreshThreshold {
 		return nil
 	}
 
-	// Calculate retry configuration based on urgency
 	config := calculateRetryConfig(timeUntilExpiry)
 
-	// Refresh the token with adaptive retry logic
+	var (
+		newAccessToken      string
+		newRefreshToken     string
+		newExpiresIn        time.Duration
+		refreshTokenRenewed bool
+	)
 	err := retryWithBackoffAndConfig(ctx, func() error {
 		refreshResp, err := a.client.RefreshTokenWithContext(ctx, &ims.RefreshTokenRequest{
 			RefreshToken: currentRefreshToken,
@@ -298,34 +327,38 @@ func (a *AdobeImsOAuthBearer) refreshTokenIfNeeded(ctx context.Context) error {
 			return err
 		}
 
-		// Update token state
-		a.accessToken = refreshResp.AccessToken
-		refreshTokenRenewed := false
+		newAccessToken = refreshResp.AccessToken
+		newExpiresIn = refreshResp.ExpiresIn
 		if refreshResp.RefreshToken != "" {
-			a.refreshToken = refreshResp.RefreshToken
+			newRefreshToken = refreshResp.RefreshToken
 			refreshTokenRenewed = true
 		}
-		a.expiresAt = time.Now().Add(refreshResp.ExpiresIn)
-
-		// Log token refresh
-		refreshAt := a.expiresAt.Add(-tokenRefreshThreshold)
-		if refreshTokenRenewed {
-			a.logger.Info("refresh token renewed",
-				zap.Time("new_expires_at", a.expiresAt),
-				zap.Duration("expires_in", refreshResp.ExpiresIn),
-				zap.Time("refresh_at", refreshAt))
-		} else {
-			a.logger.Info("access token refreshed",
-				zap.Time("new_expires_at", a.expiresAt),
-				zap.Duration("expires_in", refreshResp.ExpiresIn),
-				zap.Time("refresh_at", refreshAt))
-		}
-
 		return nil
 	}, config)
-
 	if err != nil {
 		return fmt.Errorf("failed to refresh IMS token after retries: %w", err)
+	}
+
+	a.mu.Lock()
+	a.accessToken = newAccessToken
+	if refreshTokenRenewed {
+		a.refreshToken = newRefreshToken
+	}
+	a.expiresAt = time.Now().Add(newExpiresIn)
+	expiresAt := a.expiresAt
+	a.mu.Unlock()
+
+	refreshAt := expiresAt.Add(-tokenRefreshThreshold)
+	if refreshTokenRenewed {
+		a.logger.Info("refresh token renewed",
+			zap.Time("new_expires_at", expiresAt),
+			zap.Duration("expires_in", newExpiresIn),
+			zap.Time("refresh_at", refreshAt))
+	} else {
+		a.logger.Info("access token refreshed",
+			zap.Time("new_expires_at", expiresAt),
+			zap.Duration("expires_in", newExpiresIn),
+			zap.Time("refresh_at", refreshAt))
 	}
 
 	return nil
