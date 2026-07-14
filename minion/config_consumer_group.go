@@ -36,6 +36,15 @@ type ConsumerGroupConfig struct {
 	// Allowed values are: Dead, Empty, Stable, PreparingRebalance, CompletingRebalance
 	// Source: https://github.com/apache/kafka/blob/3.4/core/src/main/scala/kafka/coordinator/group/GroupMetadata.scala
 	AllowedConsumerGroupStates []string `koanf:"allowedConsumerGroupStates"`
+
+	// MaxGroupsPerOffsetFetch bounds how many consumer groups are packed into a single batched
+	// OffsetFetch request in adminApi scrape mode. franz-go sends one request per group coordinator
+	// containing every group that coordinator owns, with no internal chunking, so on clusters where a
+	// few brokers coordinate very many groups an unbounded batch would build one very large
+	// request/response on a single broker request-handler thread. Chunking caps the size of any single
+	// request/response while still collapsing the per-group fan-out into a small number of requests.
+	// A value <= 0 disables chunking (all of a coordinator's groups are sent in one request).
+	MaxGroupsPerOffsetFetch int `koanf:"maxGroupsPerOffsetFetch"`
 }
 
 func (c *ConsumerGroupConfig) SetDefaults() {
@@ -43,6 +52,7 @@ func (c *ConsumerGroupConfig) SetDefaults() {
 	c.ScrapeMode = ConsumerGroupScrapeModeAdminAPI
 	c.Granularity = ConsumerGroupGranularityPartition
 	c.AllowedGroupIDs = []string{"/.*/"}
+	c.MaxGroupsPerOffsetFetch = 250
 }
 
 func (c *ConsumerGroupConfig) Validate() error {

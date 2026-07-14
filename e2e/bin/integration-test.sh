@@ -5,9 +5,12 @@ set -euo pipefail
 # This script validates KMinion's end-to-end monitoring and built-in metrics
 # Can be run locally or in CI
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 METRICS_URL="${METRICS_URL:-http://localhost:8080/metrics}"
 WAIT_TIMEOUT="${WAIT_TIMEOUT:-60}"
+
+# Must match e2e/bin/seed-consumer-groups.sh
+SEED_GROUP_PREFIX="${SEED_GROUP_PREFIX:-e2e-batch-test-group}"
+SEED_GROUP_COUNT="${SEED_GROUP_COUNT:-5}"
 
 # Colors for output
 RED='\033[0;31m'
@@ -181,7 +184,8 @@ validate_builtin_metrics() {
 
     # Check that we have broker info for at least one broker
     local broker_count
-    broker_count=$(echo "$metrics" | grep "^kminion_kafka_broker_info" | wc -l | tr -d ' ')
+    # `|| true` keeps `set -e` happy when grep matches nothing (the check below handles a 0 count).
+    broker_count=$(echo "$metrics" | grep -c "^kminion_kafka_broker_info" || true)
     if [ "$broker_count" -lt 1 ]; then
         log_error "No broker info metrics found"
         return 1
@@ -190,6 +194,44 @@ validate_builtin_metrics() {
     log_info "✅ Built-in metrics validation passed"
     log_info "   Exporter up: $exporter_up"
     log_info "   Brokers detected: $broker_count"
+    return 0
+}
+
+# Validate the batched multi-group OffsetFetch path.
+#
+# The seed script (seed-consumer-groups.sh) creates SEED_GROUP_COUNT consumer groups with committed
+# offsets before KMinion starts. In adminApi scrape mode, KMinion fetches every group's offsets via
+# a single batched multi-group OffsetFetch request (KIP-709). The offset_sum series is emitted
+# exclusively from that offset-fetch path, so seeing it for each seeded group proves the batched
+# request returned that group and the v8->legacy response conversion worked end-to-end.
+validate_batched_group_metrics() {
+    log_info "Validating batched multi-group OffsetFetch (${SEED_GROUP_COUNT} seeded groups)..."
+
+    local metrics
+    metrics=$(fetch_metrics "$METRICS_URL") || return 1
+
+    local offset_sum_series
+    offset_sum_series=$(echo "$metrics" | grep "^kminion_kafka_consumer_group_topic_offset_sum" || true)
+
+    local missing_groups=()
+    for i in $(seq 1 "$SEED_GROUP_COUNT"); do
+        local group="${SEED_GROUP_PREFIX}-${i}"
+        if ! echo "$offset_sum_series" | grep -q "group_id=\"${group}\""; then
+            missing_groups+=("$group")
+        fi
+    done
+
+    if [ ${#missing_groups[@]} -ne 0 ]; then
+        log_error "Batched OffsetFetch did not report offsets for these seeded groups:"
+        printf '  - %s\n' "${missing_groups[@]}"
+        echo ""
+        log_info "consumer_group_topic_offset_sum series present:"
+        echo "$offset_sum_series" || echo "  (none found)"
+        return 1
+    fi
+
+    log_info "✅ Batched OffsetFetch validation passed"
+    log_info "   All ${SEED_GROUP_COUNT} seeded consumer groups reported offsets via the batched path"
     return 0
 }
 
@@ -234,6 +276,11 @@ main() {
 
     # Run built-in metrics validation
     if ! validate_builtin_metrics; then
+        failed=1
+    fi
+
+    # Run batched multi-group OffsetFetch validation
+    if ! validate_batched_group_metrics; then
         failed=1
     fi
 
