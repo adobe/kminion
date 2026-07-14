@@ -37,11 +37,6 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("failed to validate topicManagement config: %w", err)
 	}
 
-	_, err = time.ParseDuration(c.ProbeInterval.String())
-	if err != nil {
-		return fmt.Errorf("failed to parse '%s' to time.Duration: %v", c.ProbeInterval.String(), err)
-	}
-
 	err = c.Producer.Validate()
 	if err != nil {
 		return fmt.Errorf("failed to validate producer config: %w", err)

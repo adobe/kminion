@@ -12,6 +12,22 @@ import (
 	"go.uber.org/zap"
 )
 
+// topicStatusFromMetadata classifies whether the e2e topic exists based on its metadata error code.
+// unexpectedErr is non-nil only when the topic's metadata reports an error other than
+// UnknownTopicOrPartition -- the caller should treat that as a hard failure.
+func topicStatusFromMetadata(errorCode int16) (exists bool, unexpectedErr error) {
+	typedErr := kerr.TypedErrorForCode(errorCode)
+	switch {
+	case typedErr == nil:
+		return true, nil
+	case errors.Is(typedErr, kerr.UnknownTopicOrPartition):
+		// The topic does not exist yet; the caller will create it.
+		return false, nil
+	default:
+		return false, typedErr
+	}
+}
+
 // Check our end-to-end test topic and adapt accordingly if something does not match our expectations.
 // - does it exist?
 //
@@ -30,18 +46,9 @@ func (s *Service) validateManagementTopic(ctx context.Context) error {
 		return fmt.Errorf("validateManagementTopic cannot get metadata of e2e topic: %w", err)
 	}
 
-	typedErr := kerr.TypedErrorForCode(meta.Topics[0].ErrorCode)
-	topicExists := false
-	switch {
-	case typedErr == nil:
-		topicExists = true
-	case errors.Is(typedErr, kerr.UnknownTopicOrPartition):
-		// UnknownTopicOrPartition (Error code 3) means that the topic does not exist.
-		// When the topic doesn't exist, continue to create it further down in the code.
-		topicExists = false
-	default:
-		// If the topic (possibly) exists, but there's an error, then this should result in a fail
-		return fmt.Errorf("failed to get metadata for end-to-end topic: %w", err)
+	topicExists, unexpectedErr := topicStatusFromMetadata(meta.Topics[0].ErrorCode)
+	if unexpectedErr != nil {
+		return fmt.Errorf("failed to get metadata for end-to-end topic: %w", unexpectedErr)
 	}
 
 	// Create topic if it doesn't exist
@@ -166,8 +173,8 @@ func (s *Service) updatePartitionCount(ctx context.Context) error {
 
 			typedErr := kerr.TypedErrorForCode(meta.Topics[0].ErrorCode)
 			if typedErr == nil {
-				s.partitionCount = len(meta.Topics[0].Partitions)
-				s.logger.Debug("updatePartitionCount: successfully updated partition count", zap.Int("partition_count", s.partitionCount))
+				s.partitionCount.Store(int32(len(meta.Topics[0].Partitions)))
+				s.logger.Debug("updatePartitionCount: successfully updated partition count", zap.Int32("partition_count", s.partitionCount.Load()))
 				return nil
 			}
 			if !errors.Is(typedErr, kerr.UnknownTopicOrPartition) {

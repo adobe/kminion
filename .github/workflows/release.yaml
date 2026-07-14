@@ -37,6 +37,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -61,6 +62,7 @@ jobs:
           labels: |
             org.opencontainers.image.description=KMinion - Prometheus Exporter for Apache Kafka
       - name: Build and push Docker image
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -73,6 +75,26 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
           push: ${{ startsWith(github.ref, 'refs/tags/') }}
+      - name: Install cosign
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: sigstore/cosign-installer@v4.1.2
+      - name: Sign the image (keyless)
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+        run: |
+          cosign sign --yes "${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+      - name: Generate SBOM
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: anchore/sbom-action@v0
+        with:
+          image: "${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
+          format: spdx-json
+          output-file: sbom.spdx.json
+      - name: Attach SBOM to the image
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          cosign attest --yes --predicate sbom.spdx.json --type spdxjson "${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
 
   release-helm:
     runs-on: ubuntu-latest

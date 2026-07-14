@@ -100,6 +100,12 @@ minion:
     # IgnoredGroups are regex strings of group ids that shall be ignored/skipped when exporting metrics. Ignored groups
     # take precedence over allowed groups.
     ignoredGroups: [ ]
+    # MaxGroupsPerOffsetFetch bounds how many consumer groups are packed into a single batched OffsetFetch
+    # request in adminApi scrape mode. franz-go sends one request per group coordinator with no internal
+    # chunking, so on clusters where few brokers coordinate very many groups an unbounded batch would build
+    # one very large request/response on a single broker request-handler thread. Chunking caps that while
+    # still collapsing the per-group fan-out into a small number of requests. Set to 0 to disable chunking.
+    maxGroupsPerOffsetFetch: 250
   topics:
     # Enabled can be set to false in order to disable collecting any topic metrics.
     enabled: true

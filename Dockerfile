@@ -27,9 +27,12 @@ RUN CGO_ENABLED=0 go build \
 ############################################################
 # Runtime Image
 ############################################################
-FROM alpine:latest
+FROM alpine:3.24
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/bin/kminion /app/kminion
 RUN chmod -R +x /app/kminion
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/ready || exit 1
 
 ENTRYPOINT ["/app/kminion"]
