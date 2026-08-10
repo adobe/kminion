@@ -91,6 +91,7 @@ jobs:
           image: "${{ env.GHCR_REGISTRY }}/${{ env.GHCR_IMAGE_NAME }}@${{ steps.build.outputs.digest }}"
           format: spdx-json
           output-file: sbom.spdx.json
+          upload-release-assets: false
       - name: Attach SBOM to the image
         if: startsWith(github.ref, 'refs/tags/')
         run: |
