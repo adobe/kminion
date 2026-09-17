@@ -4,6 +4,7 @@ import (
 	"context"
 	"strconv"
 
+	"github.com/cloudhut/kminion/v2/minion"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/twmb/franz-go/pkg/kerr"
 	"go.uber.org/zap"
@@ -96,13 +97,36 @@ func (e *Exporter) collectTopicInfo(ctx context.Context, ch chan<- prometheus.Me
 			*topic.Topic,
 		)
 		if parameter, exists := configsByTopic[*topic.Topic]["min.insync.replicas"]; exists {
-			if value, err := strconv.ParseFloat(parameter, 64); err == nil {
+			if minISR, err := strconv.Atoi(parameter); err == nil {
 				ch <- prometheus.MustNewConstMetric(
 					e.topicInfoMinInsyncReplicas,
 					prometheus.GaugeValue,
-					value,
+					float64(minISR),
 					*topic.Topic,
 				)
+				if e.minionSvc.Cfg.Topics.Granularity == minion.TopicGranularityPartition {
+					for _, partition := range topic.Partitions {
+						if perr := kerr.ErrorForCode(partition.ErrorCode); perr != nil {
+							isOk = false
+							e.logger.Warn("failed to get partition metadata for min ISR check, inner kafka error",
+								zap.String("topic_name", topicName),
+								zap.Int32("partition_id", partition.Partition),
+								zap.Error(perr))
+							continue
+						}
+						underMinISR := float64(0)
+						if len(partition.ISR) < minISR {
+							underMinISR = 1
+						}
+						ch <- prometheus.MustNewConstMetric(
+							e.topicPartitionUnderMinISR,
+							prometheus.GaugeValue,
+							underMinISR,
+							topicName,
+							strconv.Itoa(int(partition.Partition)),
+						)
+					}
+				}
 			}
 		}
 		if parameter, exists := configsByTopic[*topic.Topic]["retention.ms"]; exists {
