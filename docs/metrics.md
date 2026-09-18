@@ -67,6 +67,10 @@ kminion_kafka_topic_high_water_mark_sum{topic_name="__consumer_offsets"} 1.51202
 # TYPE kminion_kafka_topic_partition_max_timestamp gauge
 kminion_kafka_topic_partition_max_timestamp{partition_id="0",topic_name="my-topic"} 1.760616208802e+12
 
+# HELP kminion_kafka_topic_partition_under_min_isr Reports 1 if a partition's number of in-sync replicas is below the topic's configured min.insync.replicas, 0 otherwise
+# TYPE kminion_kafka_topic_partition_under_min_isr gauge
+kminion_kafka_topic_partition_under_min_isr{partition_id="0",topic_name="my-topic"} 0
+
 # HELP kminion_kafka_topic_max_timestamp Topic Max Timestamp - the maximum timestamp across all partitions in the topic
 # TYPE kminion_kafka_topic_max_timestamp gauge
 kminion_kafka_topic_max_timestamp{topic_name="my-topic"} 1.760616208802e+12

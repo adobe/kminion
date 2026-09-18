@@ -37,6 +37,7 @@ type Exporter struct {
 	topicInfoReplicationFactor *prometheus.Desc
 	topicInfoMinInsyncReplicas *prometheus.Desc
 	topicInfoRetentionMs       *prometheus.Desc
+	topicPartitionUnderMinISR  *prometheus.Desc
 	topicHighWaterMarkSum      *prometheus.Desc
 	partitionHighWaterMark     *prometheus.Desc
 	topicLowWaterMarkSum       *prometheus.Desc
@@ -144,6 +145,12 @@ func (e *Exporter) InitializeMetrics() {
 		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_retention_ms"),
 		"Retention time for a given topic",
 		[]string{"topic_name"},
+		nil,
+	)
+	e.topicPartitionUnderMinISR = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_partition_under_min_isr"),
+		"Reports 1 if a partition's number of in-sync replicas is below the topic's configured min.insync.replicas, 0 otherwise",
+		[]string{"topic_name", "partition_id"},
 		nil,
 	)
 	// Partition Low Water Mark
