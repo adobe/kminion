@@ -27,6 +27,13 @@
       "automerge": false
     },
     {
+      "description": "Bump the go directive in go.mod (not updated by default) so CI (go-version-file: go.mod) tracks the Dockerfile golang image",
+      "matchManagers": ["gomod"],
+      "matchDepNames": ["go"],
+      "matchDepTypes": ["golang"],
+      "rangeStrategy": "bump"
+    },
+    {
       "description": "Skip major bump of kmsg to v2 - not usable until kgo/kadm depend on kmsg v2",
       "matchManagers": ["gomod"],
       "matchPackageNames": ["github.com/twmb/franz-go/pkg/kmsg"],
