@@ -1,5 +1,7 @@
 package kafka
 
+import "fmt"
+
 // SASLGSSAPIConfig represents the Kafka Kerberos config
 type SASLGSSAPIConfig struct {
 	AuthType           string `koanf:"authType"`
@@ -18,4 +20,32 @@ type SASLGSSAPIConfig struct {
 
 func (s *SASLGSSAPIConfig) SetDefaults() {
 	s.EnableFast = true
+}
+
+func (s *SASLGSSAPIConfig) Validate() error {
+	switch s.AuthType {
+	case "USER_AUTH", "KEYTAB_AUTH":
+	default:
+		return fmt.Errorf("kafka.sasl.gssapi.authType must be one of USER_AUTH or KEYTAB_AUTH, got '%s'", s.AuthType)
+	}
+
+	if s.KerberosConfigPath == "" {
+		return fmt.Errorf("kafka.sasl.gssapi.kerberosConfigPath must be set")
+	}
+	if s.ServiceName == "" {
+		return fmt.Errorf("kafka.sasl.gssapi.serviceName must be set")
+	}
+
+	switch s.AuthType {
+	case "USER_AUTH":
+		if s.Username == "" || s.Password == "" || s.Realm == "" {
+			return fmt.Errorf("kafka.sasl.gssapi.authType USER_AUTH requires username, password and realm to be set")
+		}
+	case "KEYTAB_AUTH":
+		if s.KeyTabPath == "" || s.Username == "" || s.Realm == "" {
+			return fmt.Errorf("kafka.sasl.gssapi.authType KEYTAB_AUTH requires keyTabPath, username and realm to be set")
+		}
+	}
+
+	return nil
 }
