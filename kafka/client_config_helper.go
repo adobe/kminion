@@ -6,8 +6,8 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
 	"net"
+	"os"
 	"time"
 
 	"github.com/jcmturner/gokrb5/v8/client"
@@ -22,6 +22,46 @@ import (
 
 	krbconfig "github.com/jcmturner/gokrb5/v8/config"
 )
+
+// buildGSSAPIMechanism constructs the Kerberos/GSSAPI SASL mechanism for the given config. It
+// returns an error if authType is not one of USER_AUTH or KEYTAB_AUTH, or if the Kerberos config or
+// keytab file cannot be loaded.
+func buildGSSAPIMechanism(cfg SASLGSSAPIConfig) (sasl.Mechanism, error) {
+	kerbCfg, err := krbconfig.Load(cfg.KerberosConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create kerberos config from specified config filepath: %w", err)
+	}
+
+	var krbClient *client.Client
+	switch cfg.AuthType {
+	case "USER_AUTH":
+		krbClient = client.NewWithPassword(
+			cfg.Username,
+			cfg.Realm,
+			cfg.Password,
+			kerbCfg,
+			client.DisablePAFXFAST(!cfg.EnableFast))
+	case "KEYTAB_AUTH":
+		ktb, err := keytab.Load(cfg.KeyTabPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load keytab: %w", err)
+		}
+		krbClient = client.NewWithKeytab(
+			cfg.Username,
+			cfg.Realm,
+			ktb,
+			kerbCfg,
+			client.DisablePAFXFAST(!cfg.EnableFast))
+	default:
+		return nil, fmt.Errorf("kafka.sasl.gssapi.authType must be one of USER_AUTH or KEYTAB_AUTH")
+	}
+
+	return kerberos.Auth{
+		Client:           krbClient,
+		Service:          cfg.ServiceName,
+		PersistAfterAuth: true,
+	}.AsMechanism(), nil
+}
 
 // NewKgoConfig creates a new Config for the Kafka Client as exposed by the franz-go library.
 // If TLS certificates can't be read an error will be returned.
@@ -78,54 +118,39 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 
 		// Kerberos
 		if cfg.SASL.Mechanism == "GSSAPI" {
-			var krbClient *client.Client
-
-			kerbCfg, err := krbconfig.Load(cfg.SASL.GSSAPI.KerberosConfigPath)
+			mechanism, err := buildGSSAPIMechanism(cfg.SASL.GSSAPI)
 			if err != nil {
-				return nil, fmt.Errorf("failed to create kerberos config from specified config filepath: %w", err)
+				return nil, err
 			}
-
-			switch cfg.SASL.GSSAPI.AuthType {
-			case "USER_AUTH":
-				krbClient = client.NewWithPassword(
-					cfg.SASL.GSSAPI.Username,
-					cfg.SASL.GSSAPI.Realm,
-					cfg.SASL.GSSAPI.Password,
-					kerbCfg,
-					client.DisablePAFXFAST(!cfg.SASL.GSSAPI.EnableFast))
-			case "KEYTAB_AUTH":
-				ktb, err := keytab.Load(cfg.SASL.GSSAPI.KeyTabPath)
-				if err != nil {
-					return nil, fmt.Errorf("failed to load keytab: %w", err)
-				}
-				krbClient = client.NewWithKeytab(
-					cfg.SASL.GSSAPI.Username,
-					cfg.SASL.GSSAPI.Realm,
-					ktb,
-					kerbCfg,
-					client.DisablePAFXFAST(!cfg.SASL.GSSAPI.EnableFast))
-			}
-			if krbClient == nil {
-				return nil, fmt.Errorf("kafka.sasl.gssapi.authType must be one of USER_AUTH or KEYTAB_AUTH")
-			}
-			kerberosMechanism := kerberos.Auth{
-				Client:           krbClient,
-				Service:          cfg.SASL.GSSAPI.ServiceName,
-				PersistAfterAuth: true,
-			}.AsMechanism()
-			opts = append(opts, kgo.SASL(kerberosMechanism))
+			opts = append(opts, kgo.SASL(mechanism))
 		}
 
 		// OAuthBearer
-		if cfg.SASL.Mechanism == "OAUTHBEARER" {
-			mechanism := oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
-				token, err := cfg.SASL.OAuthBearer.getToken(ctx)
-				return oauth.Auth{
-					Zid:   cfg.SASL.OAuthBearer.ClientID,
-					Token: token,
-				}, err
-			})
-			opts = append(opts, kgo.SASL(mechanism))
+		if cfg.SASL.Mechanism == SASLMechanismOAuthBearer {
+			switch cfg.SASL.OAuthBearer.Type {
+			case OAuthBearerTypeAdobeIMS:
+				bearer, err := NewAdobeImsOAuthBearer(
+					cfg.SASL.OAuthBearer.ClientID,
+					cfg.SASL.OAuthBearer.ClientSecret,
+					cfg.SASL.OAuthBearer.Additional.ClientCode,
+					cfg.SASL.OAuthBearer.TokenEndpoint,
+					logger,
+				)
+				if err != nil {
+					return nil, fmt.Errorf("failed to create Adobe IMS OAuth bearer: %w", err)
+				}
+				opts = append(opts, bearer.Opt())
+			default:
+				// Generic OAuth
+				mechanism := oauth.Oauth(func(ctx context.Context) (oauth.Auth, error) {
+					token, err := cfg.SASL.OAuthBearer.getToken(ctx)
+					return oauth.Auth{
+						Zid:   cfg.SASL.OAuthBearer.ClientID,
+						Token: token,
+					}, err
+				})
+				opts = append(opts, kgo.SASL(mechanism))
+			}
 		}
 	}
 
@@ -136,7 +161,7 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 		if cfg.TLS.CaFilepath != "" || len(cfg.TLS.Ca) > 0 {
 			ca := []byte(cfg.TLS.Ca)
 			if cfg.TLS.CaFilepath != "" {
-				caBytes, err := ioutil.ReadFile(cfg.TLS.CaFilepath)
+				caBytes, err := os.ReadFile(cfg.TLS.CaFilepath)
 				if err != nil {
 					return nil, fmt.Errorf("failed to load ca cert: %w", err)
 				}
@@ -158,7 +183,7 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 			privateKey := []byte(cfg.TLS.Key)
 			// 1. Read certificates
 			if cfg.TLS.CertFilepath != "" {
-				certBytes, err := ioutil.ReadFile(cfg.TLS.CertFilepath)
+				certBytes, err := os.ReadFile(cfg.TLS.CertFilepath)
 				if err != nil {
 					return nil, fmt.Errorf("failed to TLS certificate: %w", err)
 				}
@@ -166,27 +191,23 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 			}
 
 			if cfg.TLS.KeyFilepath != "" {
-				keyBytes, err := ioutil.ReadFile(cfg.TLS.KeyFilepath)
+				keyBytes, err := os.ReadFile(cfg.TLS.KeyFilepath)
 				if err != nil {
 					return nil, fmt.Errorf("failed to read TLS key: %w", err)
 				}
 				privateKey = keyBytes
 			}
 
-			// 2. Check if private key needs to be decrypted. Decrypt it if passphrase is given, otherwise return error
-			pemBlock, _ := pem.Decode(privateKey)
-			if pemBlock == nil {
-				return nil, fmt.Errorf("no valid private key found")
+			// 2. Decrypt private key if encrypted and passphrase is provided
+			if cfg.TLS.Passphrase != "" {
+				var err error
+				privateKey, err = decryptPrivateKey(privateKey, cfg.TLS.Passphrase, logger)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decrypt private key: %w", err)
+				}
 			}
 
-			if x509.IsEncryptedPEMBlock(pemBlock) {
-				decryptedKey, err := x509.DecryptPEMBlock(pemBlock, []byte(cfg.TLS.Passphrase))
-				if err != nil {
-					return nil, fmt.Errorf("private key is encrypted, but could not decrypt it: %s", err)
-				}
-				// If private key was encrypted we can overwrite the original contents now with the decrypted version
-				privateKey = pem.EncodeToMemory(&pem.Block{Type: pemBlock.Type, Bytes: decryptedKey})
-			}
+			// 3. Parse the certificate and key pair
 			tlsCert, err := tls.X509KeyPair(cert, privateKey)
 			if err != nil {
 				return nil, fmt.Errorf("cannot parse pem: %s", err)
@@ -194,6 +215,10 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 			certificates = []tls.Certificate{tlsCert}
 		}
 
+		if cfg.TLS.InsecureSkipTLSVerify {
+			logger.Warn("TLS certificate verification is disabled (insecureSkipTlsVerify=true); " +
+				"the connection to Kafka is vulnerable to man-in-the-middle attacks")
+		}
 		tlsDialer := &tls.Dialer{
 			NetDialer: &net.Dialer{Timeout: 10 * time.Second},
 			Config: &tls.Config{
@@ -206,4 +231,43 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 	}
 
 	return opts, nil
+}
+
+// decryptPrivateKey attempts to decrypt an encrypted PEM-encoded private key.
+// It supports both modern PKCS#8 encrypted keys and legacy PEM encryption (with deprecation warning).
+// If the key is not encrypted, it returns the key as-is.
+func decryptPrivateKey(keyPEM []byte, passphrase string, logger *zap.Logger) ([]byte, error) {
+	block, _ := pem.Decode(keyPEM)
+	if block == nil {
+		return nil, fmt.Errorf("failed to decode PEM block containing private key")
+	}
+
+	// PKCS#8 encrypted keys ("ENCRYPTED PRIVATE KEY" PEM blocks) use PBES2, which Go's stdlib
+	// x509.DecryptPEMBlock does not support (it only implements the legacy RFC1423 PEM encryption
+	// scheme). Rather than attempt a decryption that will always fail while confusingly nudging
+	// users toward the insecure legacy format, fail fast with a clear, actionable error.
+	if block.Type == "ENCRYPTED PRIVATE KEY" {
+		return nil, fmt.Errorf("PKCS#8 encrypted private keys are not supported for password-based " +
+			"decryption; convert your key to the legacy encrypted format instead: " +
+			"openssl pkcs8 -topk8 -v1 PBE-SHA1-3DES -in your_key.pem -out legacy_key.pem, or provide " +
+			"an unencrypted key file")
+	}
+
+	// Check if it's a legacy encrypted PEM block (insecure, deprecated)
+	if x509.IsEncryptedPEMBlock(block) { //nolint:staticcheck // Supporting legacy keys for backward compatibility
+		logger.Warn("Using legacy PEM encryption for private key. This encryption method is insecure and deprecated. " +
+			"Please migrate to PKCS#8 encrypted keys. " +
+			"You can convert your key using: openssl pkcs8 -topk8 -v2 aes256 -in old_key.pem -out new_key.pem")
+
+		// Decrypt using legacy method (insecure but needed for backward compatibility)
+		decrypted, err := x509.DecryptPEMBlock(block, []byte(passphrase)) //nolint:staticcheck // Supporting legacy keys
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt legacy PEM private key: %w", err)
+		}
+		// Re-encode as unencrypted PEM
+		return pem.EncodeToMemory(&pem.Block{Type: block.Type, Bytes: decrypted}), nil
+	}
+
+	// Key is not encrypted, return as-is
+	return keyPEM, nil
 }
