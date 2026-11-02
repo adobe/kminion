@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
@@ -38,11 +39,13 @@ func TestNewConfig_EnvValues(t *testing.T) {
 			t.Setenv("KAFKA_SASL_ENABLED", "true")
 			t.Setenv("KAFKA_SASL_USERNAME", "user")
 			t.Setenv("KAFKA_SASL_PASSWORD", tt.password)
+			t.Setenv("MINION_CONNECTIONHEALTHCHECK_PROBEINTERVAL", "45s")
 
 			cfg, err := newConfig(zap.NewNop())
 			require.NoError(t, err)
 			require.Equal(t, tt.wantBrokers, cfg.Kafka.Brokers)
 			require.Equal(t, tt.wantPassword, cfg.Kafka.SASL.Password)
+			require.Equal(t, 45*time.Second, cfg.Minion.ConnectionHealthCheck.ProbeInterval)
 		})
 	}
 }
