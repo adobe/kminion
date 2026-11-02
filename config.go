@@ -42,6 +42,11 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("failed to validate minion config: %w", err)
 	}
 
+	err = c.Exporter.Validate()
+	if err != nil {
+		return fmt.Errorf("failed to validate exporter config: %w", err)
+	}
+
 	err = c.Logger.Validate()
 	if err != nil {
 		return fmt.Errorf("failed to validate logger config: %w", err)
