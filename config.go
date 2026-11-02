@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/knadh/koanf"
+	"github.com/go-viper/mapstructure/v2"
 	"github.com/knadh/koanf/parsers/yaml"
-	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/env/v2"
 	"github.com/knadh/koanf/providers/file"
-	"github.com/mitchellh/mapstructure"
+	"github.com/knadh/koanf/v2"
 	"github.com/redpanda-data/kminion/v2/kafka"
 	"github.com/redpanda-data/kminion/v2/logging"
 	"github.com/redpanda-data/kminion/v2/minion"
@@ -86,16 +86,26 @@ func newConfig(logger *zap.Logger) (Config, error) {
 		return Config{}, err
 	}
 
-	err = k.Load(env.ProviderWithValue("", ".", func(s string, v string) (string, interface{}) {
-		key := strings.Replace(strings.ToLower(s), "_", ".", -1)
-		// Keep the raw value. The default decode hook splits comma-separated values only for slice fields.
-		return key, v
+	err = k.Load(env.Provider(".", env.Opt{
+		TransformFunc: func(s string, v string) (string, interface{}) {
+			key := strings.ReplaceAll(strings.ToLower(s), "_", ".")
+			// Keep the raw value. The decode hook below splits commas only for slice fields.
+			return key, v
+		},
 	}), nil)
 	if err != nil {
 		return Config{}, err
 	}
 
-	err = k.Unmarshal("", &cfg)
+	err = k.UnmarshalWithConf("", &cfg, koanf.UnmarshalConf{
+		DecoderConfig: &mapstructure.DecoderConfig{
+			DecodeHook: mapstructure.ComposeDecodeHookFunc(
+				mapstructure.StringToTimeDurationHookFunc(),
+				mapstructure.StringToSliceHookFunc(","),
+				mapstructure.TextUnmarshallerHookFunc()),
+			WeaklyTypedInput: true,
+		},
+	})
 	if err != nil {
 		return Config{}, err
 	}
