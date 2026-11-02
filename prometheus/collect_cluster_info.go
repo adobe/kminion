@@ -2,9 +2,10 @@ package prometheus
 
 import (
 	"context"
+	"strconv"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"go.uber.org/zap"
-	"strconv"
 )
 
 func (e *Exporter) collectClusterInfo(ctx context.Context, ch chan<- prometheus.Metric) bool {
