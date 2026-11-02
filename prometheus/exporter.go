@@ -32,11 +32,18 @@ type Exporter struct {
 	topicLogDirSize  *prometheus.Desc
 
 	// Topic / Partition
-	topicInfo              *prometheus.Desc
-	topicHighWaterMarkSum  *prometheus.Desc
-	partitionHighWaterMark *prometheus.Desc
-	topicLowWaterMarkSum   *prometheus.Desc
-	partitionLowWaterMark  *prometheus.Desc
+	topicInfo                  *prometheus.Desc
+	topicInfoPartitionsCount   *prometheus.Desc
+	topicInfoReplicationFactor *prometheus.Desc
+	topicInfoMinInsyncReplicas *prometheus.Desc
+	topicInfoRetentionMs       *prometheus.Desc
+	topicPartitionUnderMinISR  *prometheus.Desc
+	topicHighWaterMarkSum      *prometheus.Desc
+	partitionHighWaterMark     *prometheus.Desc
+	topicLowWaterMarkSum       *prometheus.Desc
+	partitionLowWaterMark      *prometheus.Desc
+	topicMaxTimestamp          *prometheus.Desc
+	partitionMaxTimestamp      *prometheus.Desc
 
 	// Consumer Groups
 	consumerGroupInfo                    *prometheus.Desc
@@ -116,6 +123,36 @@ func (e *Exporter) InitializeMetrics() {
 		labels,
 		nil,
 	)
+	e.topicInfoPartitionsCount = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_partitions_count"),
+		"Partitions configuration for a given topic",
+		[]string{"topic_name"},
+		nil,
+	)
+	e.topicInfoReplicationFactor = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_replication_factor"),
+		"Replication factor configuration for a given topic",
+		[]string{"topic_name"},
+		nil,
+	)
+	e.topicInfoMinInsyncReplicas = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_min_insync_replicas"),
+		"Min in-sync replicas configuration for a given topic",
+		[]string{"topic_name"},
+		nil,
+	)
+	e.topicInfoRetentionMs = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_info_retention_ms"),
+		"Retention time for a given topic",
+		[]string{"topic_name"},
+		nil,
+	)
+	e.topicPartitionUnderMinISR = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_partition_under_min_isr"),
+		"Reports 1 if a partition's number of in-sync replicas is below the topic's configured min.insync.replicas, 0 otherwise",
+		[]string{"topic_name", "partition_id"},
+		nil,
+	)
 	// Partition Low Water Mark
 	e.partitionLowWaterMark = prometheus.NewDesc(
 		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_partition_low_water_mark"),
@@ -141,6 +178,20 @@ func (e *Exporter) InitializeMetrics() {
 	e.topicHighWaterMarkSum = prometheus.NewDesc(
 		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_high_water_mark_sum"),
 		"Sum of all the topic's partition high water marks",
+		[]string{"topic_name"},
+		nil,
+	)
+	// Partition Max Timestamp
+	e.partitionMaxTimestamp = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_partition_max_timestamp"),
+		"Partition Max Timestamp",
+		[]string{"topic_name", "partition_id"},
+		nil,
+	)
+	// Topic Max Timestamp
+	e.topicMaxTimestamp = prometheus.NewDesc(
+		prometheus.BuildFQName(e.cfg.Namespace, "kafka", "topic_max_timestamp"),
+		"Topic Max Timestamp",
 		[]string{"topic_name"},
 		nil,
 	)
@@ -245,12 +296,13 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		}
 	}()
 
+	startTime := time.Now()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*180)
 	defer cancel()
 
 	// Attach a unique id which will be used for caching (and and it's invalidation) of the kafka requests
 	uuid := uuid2.New()
-	ctx = context.WithValue(ctx, "requestId", uuid.String())
+	ctx = context.WithValue(ctx, minion.RequestIDKey, uuid.String())
 
 	ok := e.collectClusterInfo(ctx, ch)
 	ok = e.collectExporterMetrics(ctx, ch) && ok
@@ -261,9 +313,19 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	ok = e.collectConsumerGroupLags(ctx, ch) && ok
 	ok = e.collectTopicInfo(ctx, ch) && ok
 
+	duration := time.Since(startTime)
+
 	if ok {
 		ch <- prometheus.MustNewConstMetric(e.exporterUp, prometheus.GaugeValue, 1.0)
+		e.logger.Info("Completed Kafka metrics scrape successfully",
+			zap.String("request_id", uuid.String()),
+			zap.Duration("duration", duration),
+			zap.Float64("duration_seconds", duration.Seconds()))
 	} else {
 		ch <- prometheus.MustNewConstMetric(e.exporterUp, prometheus.GaugeValue, 0.0)
+		e.logger.Warn("Completed Kafka metrics scrape with errors",
+			zap.String("request_id", uuid.String()),
+			zap.Duration("duration", duration),
+			zap.Float64("duration_seconds", duration.Seconds()))
 	}
 }
