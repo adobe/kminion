@@ -17,13 +17,14 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 	if !e.minionSvc.Cfg.ConsumerGroups.Enabled {
 		return true
 	}
-	groups, err := e.minionSvc.DescribeConsumerGroups(ctx)
+	groups, allGroups, err := e.minionSvc.DescribeConsumerGroups(ctx)
 	if err != nil {
 		e.logger.Error("failed to collect consumer groups, because Kafka request failed", zap.Error(err))
 		return false
 	}
 
 	isOk := true
+	emptyGroups := 0
 	for _, grp := range groups {
 		if grp.Groups == nil {
 			// The group coordinator failed to respond, the error has already been logged.
@@ -32,7 +33,7 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 		}
 		coordinator := grp.BrokerMetadata.NodeID
 		for _, group := range grp.Groups.Groups {
-			if !e.minionSvc.IsGroupAllowed(group.Group) {
+			if !e.minionSvc.IsGroupAllowed(group.Group, group.State) {
 				continue
 			}
 			err := kerr.ErrorForCode(group.ErrorCode)
@@ -52,24 +53,31 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			if group.State == "Stable" {
 				state = 1
 			}
-			ch <- prometheus.MustNewConstMetric(
-				e.consumerGroupInfo,
-				prometheus.GaugeValue,
-				float64(state),
-				group.Group,
-				group.Protocol,
-				group.ProtocolType,
-				group.State,
-				strconv.FormatInt(int64(coordinator), 10),
-			)
+			if group.State != "Empty" {
+				// don't report on empty groups
+				ch <- prometheus.MustNewConstMetric(
+					e.consumerGroupInfo,
+					prometheus.GaugeValue,
+					float64(state),
+					group.Group,
+					group.Protocol,
+					group.ProtocolType,
+					group.State,
+					strconv.FormatInt(int64(coordinator), 10),
+				)
+			} else {
+				emptyGroups++
+			}
 
 			// total number of members in consumer groups
-			ch <- prometheus.MustNewConstMetric(
-				e.consumerGroupMembers,
-				prometheus.GaugeValue,
-				float64(len(group.Members)),
-				group.Group,
-			)
+			if len(group.Members) > 0 {
+				ch <- prometheus.MustNewConstMetric(
+					e.consumerGroupMembers,
+					prometheus.GaugeValue,
+					float64(len(group.Members)),
+					group.Group,
+				)
+			}
 
 			// iterate all members and build two maps:
 			// - {topic -> number-of-consumers}
@@ -78,22 +86,24 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			topicPartitionsAssigned := make(map[string]int)
 			membersWithEmptyAssignment := 0
 			failedAssignmentsDecode := 0
+			var lastAssignmentDecodeErr error
 			for _, member := range group.Members {
 				if len(member.MemberAssignment) == 0 {
 					membersWithEmptyAssignment++
 					continue
 				}
 
-				kassignment, err := decodeMemberAssignments(group.ProtocolType, member)
-				if err != nil {
+				kassignment, decodeErr := decodeMemberAssignments(group.ProtocolType, member)
+				if decodeErr != nil {
 					e.logger.Debug("failed to decode consumer group member assignment, internal kafka error",
-						zap.Error(err),
+						zap.Error(decodeErr),
 						zap.String("group_id", group.Group),
 						zap.String("client_id", member.ClientID),
 						zap.String("member_id", member.MemberID),
 						zap.String("client_host", member.ClientHost),
 					)
 					failedAssignmentsDecode++
+					lastAssignmentDecodeErr = decodeErr
 					continue
 				}
 				if kassignment == nil {
@@ -112,14 +122,14 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 
 			if failedAssignmentsDecode > 0 {
 				e.logger.Error("failed to decode consumer group member assignment, internal kafka error",
-					zap.Error(err),
+					zap.Error(lastAssignmentDecodeErr),
 					zap.String("group_id", group.Group),
 					zap.Int("assignment_decode_failures", failedAssignmentsDecode),
 				)
 			}
 
 			// number of members with no assignment in a stable consumer group
-			if membersWithEmptyAssignment > 0 {
+			if membersWithEmptyAssignment > 0 && group.State == "Stable" {
 				ch <- prometheus.MustNewConstMetric(
 					e.consumerGroupMembersEmpty,
 					prometheus.GaugeValue,
@@ -149,6 +159,16 @@ func (e *Exporter) collectConsumerGroups(ctx context.Context, ch chan<- promethe
 			}
 		}
 	}
+	ch <- prometheus.MustNewConstMetric(
+		e.consumerGroupInfoAllGroups,
+		prometheus.GaugeValue,
+		float64(allGroups),
+	)
+	ch <- prometheus.MustNewConstMetric(
+		e.consumerGroupInfoEmptyGroups,
+		prometheus.GaugeValue,
+		float64(emptyGroups),
+	)
 	return isOk
 }
 

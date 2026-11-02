@@ -28,27 +28,51 @@ type DescribeConsumerGroupsResponse struct {
 	Groups         *kmsg.DescribeGroupsResponse
 }
 
-func (s *Service) listConsumerGroupsCached(ctx context.Context) (*kmsg.ListGroupsResponse, error) {
-	reqId := ctx.Value("requestId").(string)
-	key := "list-consumer-groups-" + reqId
+type GroupsInfo struct {
+	AllowedGroups  *kmsg.ListGroupsResponse
+	AllGroupsCount int
+}
 
-	if cachedRes, exists := s.getCachedItem(key); exists {
-		return cachedRes.(*kmsg.ListGroupsResponse), nil
+func (s *Service) listConsumerGroupsCached(ctx context.Context) (*GroupsInfo, error) {
+	keyAllowedGroups := "list-consumer-groups"
+
+	if cachedRes, exists := s.getCachedItem(keyAllowedGroups); exists {
+		return cachedRes.(*GroupsInfo), nil
 	}
-	res, err, _ := s.requestGroup.Do(key, func() (interface{}, error) {
+	groups, err, _ := s.requestGroup.Do(keyAllowedGroups, func() (interface{}, error) {
 		res, err := s.listConsumerGroups(ctx)
 		if err != nil {
 			return nil, err
 		}
-		s.setCachedItem(key, res, 120*time.Second)
+		total, allowedGroups := s.filterAllowedGroups(res.Groups)
+		res.Groups = allowedGroups
+		groups := &GroupsInfo{
+			AllGroupsCount: total,
+			AllowedGroups:  res,
+		}
+		s.setCachedItem(keyAllowedGroups, groups, 120*time.Second)
 
-		return res, nil
+		return groups, nil
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	return res.(*kmsg.ListGroupsResponse), nil
+	return groups.(*GroupsInfo), nil
+}
+
+// filterAllowedGroups splits groups into the total count (before filtering) and the subset allowed
+// by IsGroupAllowed. Keeping the total separate from the filtered slice prevents the count from
+// silently becoming "count of allowed groups" if the filtering logic changes later.
+func (s *Service) filterAllowedGroups(groups []kmsg.ListGroupsResponseGroup) (total int, allowed []kmsg.ListGroupsResponseGroup) {
+	total = len(groups)
+	allowed = make([]kmsg.ListGroupsResponseGroup, 0, total)
+	for i := range groups {
+		if s.IsGroupAllowed(groups[i].Group, groups[i].GroupState) {
+			allowed = append(allowed, groups[i])
+		}
+	}
+	return total, allowed
 }
 
 func (s *Service) listConsumerGroups(ctx context.Context) (*kmsg.ListGroupsResponse, error) {
@@ -65,13 +89,13 @@ func (s *Service) listConsumerGroups(ctx context.Context) (*kmsg.ListGroupsRespo
 	return res, nil
 }
 
-func (s *Service) DescribeConsumerGroups(ctx context.Context) ([]DescribeConsumerGroupsResponse, error) {
+func (s *Service) DescribeConsumerGroups(ctx context.Context) ([]DescribeConsumerGroupsResponse, int, error) {
 	listRes, err := s.listConsumerGroupsCached(ctx)
 	if err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 
-	classicGroupIDs, consumerGroupIDs, skippedGroups := partitionGroupIDsByType(listRes)
+	classicGroupIDs, consumerGroupIDs, skippedGroups := partitionGroupIDsByType(listRes.AllowedGroups)
 	for _, group := range skippedGroups {
 		s.logger.Debug("skipping group with a group type that cannot be described",
 			zap.String("group", group.Group),
@@ -91,10 +115,10 @@ func (s *Service) DescribeConsumerGroups(ctx context.Context) ([]DescribeConsume
 		return nil
 	})
 	if err := eg.Wait(); err != nil {
-		return nil, err
+		return nil, -1, err
 	}
 
-	return append(classicGroups, consumerProtocolGroups...), nil
+	return append(classicGroups, consumerProtocolGroups...), listRes.AllGroupsCount, nil
 }
 
 // partitionGroupIDsByType splits the listed groups into the ones using the classic rebalance protocol and
