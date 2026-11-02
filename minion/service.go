@@ -14,6 +14,7 @@ import (
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/kmsg"
 	"github.com/twmb/franz-go/pkg/kversion"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"golang.org/x/sync/singleflight"
 
@@ -27,6 +28,7 @@ type Service struct {
 	// requestGroup is used to deduplicate multiple concurrent requests to kafka
 	requestGroup *singleflight.Group
 	cache        map[string]interface{}
+	cacheTimers  map[string]*time.Timer
 	cacheLock    sync.RWMutex
 
 	AllowedGroupIDsExpr []*regexp.Regexp
@@ -37,6 +39,12 @@ type Service struct {
 	client    *kgo.Client
 	admClient *kadm.Client
 	storage   *Storage
+
+	// logDirsSupported tracks whether the connected Kafka cluster supports the DescribeLogDirs API, as
+	// determined by ensureCompatibility(). Read via IsLogDirsEnabled() instead of Cfg.LogDirs.Enabled
+	// directly -- Cfg is treated as read-only static configuration after construction, and mutating it
+	// at runtime (as ensureCompatibility used to do) is not safe for concurrent readers.
+	logDirsSupported *atomic.Bool
 }
 
 func NewService(cfg Config, logger *zap.Logger, kafkaSvc *kafka.Service, metricsNamespace string, ctx context.Context) (*Service, error) {
@@ -66,10 +74,22 @@ func NewService(cfg Config, logger *zap.Logger, kafkaSvc *kafka.Service, metrics
 	logger.Info("successfully connected to kafka cluster")
 
 	// Compile regexes. We can ignore the errors because valid compilation has been validated already
-	allowedGroupIDsExpr, _ := compileRegexes(cfg.ConsumerGroups.AllowedGroupIDs)
-	ignoredGroupIDsExpr, _ := compileRegexes(cfg.ConsumerGroups.IgnoredGroupIDs)
-	allowedTopicsExpr, _ := compileRegexes(cfg.Topics.AllowedTopics)
-	ignoredTopicsExpr, _ := compileRegexes(cfg.Topics.IgnoredTopics)
+	allowedGroupIDsExpr, err := compileRegexes(cfg.ConsumerGroups.AllowedGroupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile allowed group IDs regex: %w", err)
+	}
+	ignoredGroupIDsExpr, err := compileRegexes(cfg.ConsumerGroups.IgnoredGroupIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile ignored group IDs regex: %w", err)
+	}
+	allowedTopicsExpr, err := compileRegexes(cfg.Topics.AllowedTopics)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile allowed topics regex: %w", err)
+	}
+	ignoredTopicsExpr, err := compileRegexes(cfg.Topics.IgnoredTopics)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compile ignored topics regex: %w", err)
+	}
 
 	service := &Service{
 		Cfg:    cfg,
@@ -77,6 +97,7 @@ func NewService(cfg Config, logger *zap.Logger, kafkaSvc *kafka.Service, metrics
 
 		requestGroup: &singleflight.Group{},
 		cache:        make(map[string]interface{}),
+		cacheTimers:  make(map[string]*time.Timer),
 		cacheLock:    sync.RWMutex{},
 
 		AllowedGroupIDsExpr: allowedGroupIDsExpr,
@@ -87,7 +108,8 @@ func NewService(cfg Config, logger *zap.Logger, kafkaSvc *kafka.Service, metrics
 		client:    client,
 		admClient: kadm.NewClient(client),
 
-		storage: storage,
+		storage:          storage,
+		logDirsSupported: atomic.NewBool(cfg.LogDirs.Enabled),
 	}
 
 	return service, nil
@@ -126,7 +148,7 @@ func (s *Service) HandleIsReady() http.HandlerFunc {
 		res := response{StatusCode: status}
 		resJson, _ := json.Marshal(res)
 		w.WriteHeader(status)
-		w.Write(resJson)
+		_, _ = w.Write(resJson)
 	}
 }
 
@@ -149,11 +171,17 @@ func (s *Service) ensureCompatibility(ctx context.Context) error {
 		if !isSupported {
 			s.logger.Warn("describing log dirs is enabled, but it is not supported because your Kafka cluster " +
 				"version is too old. feature will be disabled")
-			s.Cfg.LogDirs.Enabled = false
+			s.logDirsSupported.Store(false)
 		}
 	}
 
 	return nil
+}
+
+// IsLogDirsEnabled reports whether log dirs collection is enabled and supported by the connected
+// cluster. Safe for concurrent use, unlike reading Cfg.LogDirs.Enabled directly.
+func (s *Service) IsLogDirsEnabled() bool {
+	return s.logDirsSupported.Load()
 }
 
 func (s *Service) getCachedItem(key string) (interface{}, bool) {
@@ -168,12 +196,14 @@ func (s *Service) setCachedItem(key string, val interface{}, timeout time.Durati
 	s.cacheLock.Lock()
 	defer s.cacheLock.Unlock()
 
-	go func() {
-		time.Sleep(timeout)
-		s.deleteCachedItem(key)
-	}()
+	if existingTimer, exists := s.cacheTimers[key]; exists {
+		existingTimer.Stop()
+	}
 
 	s.cache[key] = val
+	s.cacheTimers[key] = time.AfterFunc(timeout, func() {
+		s.deleteCachedItem(key)
+	})
 }
 
 func (s *Service) deleteCachedItem(key string) {
