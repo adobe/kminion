@@ -11,7 +11,7 @@ import (
 )
 
 func (e *Exporter) collectLogDirs(ctx context.Context, ch chan<- prometheus.Metric) bool {
-	if !e.minionSvc.Cfg.LogDirs.Enabled {
+	if !e.minionSvc.IsLogDirsEnabled() {
 		return true
 	}
 	isOk := true
