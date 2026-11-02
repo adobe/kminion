@@ -52,9 +52,6 @@ func (e *Exporter) collectConsumerGroupLags(ctx context.Context, ch chan<- prome
 func (e *Exporter) collectConsumerGroupLagsOffsetTopic(_ context.Context, ch chan<- prometheus.Metric, marks map[string]map[int32]waterMark) bool {
 	offsets := e.minionSvc.ListAllConsumerGroupOffsetsInternal()
 	for groupName, group := range offsets {
-		if !e.minionSvc.IsGroupAllowed(groupName) {
-			continue
-		}
 		offsetCommits := 0
 
 		for topicName, topic := range group {
@@ -134,9 +131,6 @@ func (e *Exporter) collectConsumerGroupLagsAdminAPI(ctx context.Context, ch chan
 		return false
 	}
 	for groupName, offsetRes := range groupOffsets {
-		if !e.minionSvc.IsGroupAllowed(groupName) {
-			continue
-		}
 		if offsetRes == nil {
 			// The offset fetch request for this group failed, the error has already been logged.
 			isOk = false
