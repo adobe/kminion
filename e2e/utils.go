@@ -2,6 +2,7 @@ package e2e
 
 import (
 	"context"
+	"errors"
 	"math"
 	"time"
 
@@ -24,6 +25,9 @@ func createHistogramBuckets(maxLatency time.Duration) []float64 {
 	}
 	latencyCount := math.Logb(float64(normalizedLatency))
 	count := int(latencyCount) + 3
+	if count < 1 {
+		count = 1
+	}
 	bucket := prometheus.ExponentialBuckets(0.005, 2, count)
 
 	return bucket
@@ -41,7 +45,7 @@ func containsStr(ar []string, x string) (bool, int) {
 // logCommitErrors logs all errors in commit response and returns a well formatted error code if there was one
 func (s *Service) logCommitErrors(r *kmsg.OffsetCommitResponse, err error) string {
 	if err != nil {
-		if err == context.DeadlineExceeded {
+		if errors.Is(err, context.DeadlineExceeded) {
 			s.logger.Warn("offset commit failed because SLA has been exceeded")
 			return "OFFSET_COMMIT_SLA_EXCEEDED"
 		}
@@ -71,6 +75,8 @@ func (s *Service) logCommitErrors(r *kmsg.OffsetCommitResponse, err error) strin
 }
 
 // brokerMetadataByBrokerID returns a map of all broker metadata keyed by their BrokerID
+//
+//nolint:unused
 func brokerMetadataByBrokerID(meta []kmsg.MetadataResponseBroker) map[int32]kmsg.MetadataResponseBroker {
 	res := make(map[int32]kmsg.MetadataResponseBroker)
 	for _, broker := range meta {
@@ -80,6 +86,8 @@ func brokerMetadataByBrokerID(meta []kmsg.MetadataResponseBroker) map[int32]kmsg
 }
 
 // brokerMetadataByRackID returns a map of all broker metadata keyed by their Rack identifier
+//
+//nolint:unused
 func brokerMetadataByRackID(meta []kmsg.MetadataResponseBroker) map[string][]kmsg.MetadataResponseBroker {
 	res := make(map[string][]kmsg.MetadataResponseBroker)
 	for _, broker := range meta {
@@ -99,6 +107,7 @@ func pointerStrToStr(str *string) string {
 	return *str
 }
 
+//nolint:unused
 func safeUnwrap(err error) string {
 	if err == nil {
 		return "<nil>"

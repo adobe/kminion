@@ -29,7 +29,7 @@ type Service struct {
 	groupTracker   *groupTracker   // tracks consumer groups starting with the kminion prefix and deletes them if they are unused for some time
 	messageTracker *messageTracker // tracks successfully produced messages,
 	clientHooks    *clientHooks    // logs broker events, tracks the coordinator (i.e. which broker last responded to our offset commit)
-	partitionCount atomic.Int64    // number of partitions of our test topic, used to send messages to all partitions
+	partitionCount atomic.Int32    // number of partitions of our test topic, used to send messages to all partitions
 
 	// Metrics
 	messagesProducedInFlight *prometheus.GaugeVec

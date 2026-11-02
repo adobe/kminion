@@ -31,11 +31,11 @@ func (c *EndToEndTopicConfig) SetDefaults() {
 func (c *EndToEndTopicConfig) Validate() error {
 
 	if c.ReplicationFactor < 1 {
-		return fmt.Errorf("failed to parse replicationFactor, it should be more than 1, retrieved value %v", c.ReplicationFactor)
+		return fmt.Errorf("failed to parse replicationFactor, it should be at least 1, retrieved value %v", c.ReplicationFactor)
 	}
 
 	if c.PartitionsPerBroker < 1 {
-		return fmt.Errorf("failed to parse partitionsPerBroker, it should be more than 1, retrieved value %v", c.PartitionsPerBroker)
+		return fmt.Errorf("failed to parse partitionsPerBroker, it should be at least 1, retrieved value %v", c.PartitionsPerBroker)
 	}
 
 	// A zero or negative duration panics in time.NewTicker
