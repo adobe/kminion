@@ -11,6 +11,18 @@ import (
 	"go.uber.org/zap"
 )
 
+// coordinatorIDFromAtomicValue safely extracts the coordinator broker ID from the value stored in
+// clientHooks.currentCoordinator. ok=false means no coordinator has been observed yet (e.g. before
+// the first successful JoinGroup/Heartbeat/SyncGroup/OffsetCommit response) -- callers must not
+// treat that as a panic-worthy condition.
+func coordinatorIDFromAtomicValue(v interface{}) (id string, ok bool) {
+	coordinator, ok := v.(kgo.BrokerMetadata)
+	if !ok {
+		return "", false
+	}
+	return strconv.Itoa(int(coordinator.NodeID)), true
+}
+
 func (s *Service) startConsumeMessages(ctx context.Context, initializedCh chan<- bool) {
 	client := s.client
 
@@ -21,6 +33,11 @@ func (s *Service) startConsumeMessages(ctx context.Context, initializedCh chan<-
 	isInitialized := false
 	for {
 		fetches := client.PollFetches(ctx)
+		if ctx.Err() != nil {
+			// Context was cancelled (e.g. kminion is shutting down); PollFetches returns immediately
+			// in this case, so stop here instead of busy-spinning and logging the same error forever.
+			return
+		}
 		if !isInitialized {
 			isInitialized = true
 			initializedCh <- true
@@ -53,8 +70,11 @@ func (s *Service) commitOffsets(ctx context.Context) {
 	client.CommitOffsets(childCtx, uncommittedOffset, func(_ *kgo.Client, req *kmsg.OffsetCommitRequest, r *kmsg.OffsetCommitResponse, err error) {
 		cancel()
 
-		coordinator := s.clientHooks.currentCoordinator.Load().(kgo.BrokerMetadata)
-		coordinatorID := strconv.Itoa(int(coordinator.NodeID))
+		coordinatorID, ok := coordinatorIDFromAtomicValue(s.clientHooks.currentCoordinator.Load())
+		if !ok {
+			s.logger.Warn("skipping offset commit metrics: no consumer group coordinator has been observed yet")
+			return
+		}
 
 		latency := time.Since(startCommitTimestamp)
 		s.offsetCommitLatency.WithLabelValues(coordinatorID).Observe(latency.Seconds())
