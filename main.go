@@ -19,6 +19,7 @@ import (
 	"github.com/redpanda-data/kminion/v2/logging"
 	"github.com/redpanda-data/kminion/v2/minion"
 	"github.com/redpanda-data/kminion/v2/prometheus"
+	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 )
 
@@ -32,6 +33,7 @@ var (
 	// builtAt is a string that represent a human-readable date when the binary was built.
 	builtAt = "N/A"
 	// commit is a string that represents the last git commit for this build.
+	//nolint:unused
 	commit = "N/A"
 )
 
@@ -45,14 +47,16 @@ func main() {
 	if err != nil {
 		startupLogger.Fatal("failed to parse config", zap.Error(err))
 	}
-
 	logger := logging.NewLogger(cfg.Logger, cfg.Exporter.Namespace).Named("main")
-	if err != nil {
-		startupLogger.Fatal("failed to create new logger", zap.Error(err))
-	}
-
 	logger.Info("started kminion", zap.String("version", version), zap.String("built_at", builtAt))
 
+	// set GOMAXPROCS automatically
+	l := func(format string, a ...interface{}) {
+		logger.Info(fmt.Sprintf(format, a...))
+	}
+	if _, err = maxprocs.Set(maxprocs.Logger(l)); err != nil {
+		logger.Fatal("failed to set GOMAXPROCS automatically", zap.Error(err))
+	}
 	// Setup context that stops when the application receives an interrupt or termination signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -91,7 +95,7 @@ func main() {
 			wrappedRegisterer,
 		)
 		if err != nil {
-			logger.Fatal("failed to create end-to-end monitoring service: %w", zap.Error(err))
+			logger.Fatal("failed to create end-to-end monitoring service", zap.Error(err))
 		}
 
 		if err = e2eService.Start(ctx); err != nil {
@@ -120,7 +124,10 @@ func main() {
 
 	// Start HTTP server
 	address := net.JoinHostPort(cfg.Exporter.Host, strconv.Itoa(cfg.Exporter.Port))
-	srv := &http.Server{Addr: address, ReadHeaderTimeout: 10 * time.Second}
+	srv := &http.Server{
+		Addr:              address,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
 	go func() {
 		<-ctx.Done()
 		if err := srv.Shutdown(context.Background()); err != nil {

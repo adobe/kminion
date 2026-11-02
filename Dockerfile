@@ -1,7 +1,7 @@
 ############################################################
 # Build image
 ############################################################
-FROM golang:1.26.10-alpine AS builder
+FROM golang:1.27.3-alpine AS builder
 
 ARG VERSION
 ARG BUILT_AT
@@ -27,13 +27,12 @@ RUN CGO_ENABLED=0 go build \
 ############################################################
 # Runtime Image
 ############################################################
-FROM alpine:3
+FROM alpine:3.24
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --from=builder /app/bin/kminion /app/kminion
-RUN addgroup -S redpanda \
-    && adduser -S redpanda -G redpanda \
-    && chmod o+rx /app/kminion \
-    && apk upgrade --no-cache
-USER redpanda
+RUN chmod -R +x /app/kminion
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+  CMD wget -qO- http://127.0.0.1:8080/ready || exit 1
 
 ENTRYPOINT ["/app/kminion"]
