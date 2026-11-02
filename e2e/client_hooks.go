@@ -14,8 +14,7 @@ import (
 type clientHooks struct {
 	logger *zap.Logger
 
-	lastCoordinatorUpdate time.Time
-	currentCoordinator    *atomic.Value // kgo.BrokerMetadata
+	currentCoordinator *atomic.Value // kgo.BrokerMetadata
 }
 
 func newEndToEndClientHooks(logger *zap.Logger) *clientHooks {
@@ -83,6 +82,5 @@ func (c *clientHooks) OnBrokerRead(meta kgo.BrokerMetadata, key int16, bytesRead
 
 	if err == nil {
 		c.currentCoordinator.Store(meta)
-		c.lastCoordinatorUpdate = time.Now()
 	}
 }

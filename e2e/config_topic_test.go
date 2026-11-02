@@ -177,3 +177,11 @@ func TestPartitionPlanner_RebalancePartitionsDisabled_Creates(t *testing.T) {
 	assert.NotEqual(t, int32(0), newLeader,
 		"new partition should not be led by broker 0 (already leads 3 partitions in actual state)")
 }
+
+func TestEndToEndTopicConfig_Validate_ErrorMessageWording(t *testing.T) {
+	cfg := EndToEndTopicConfig{ReplicationFactor: 0, PartitionsPerBroker: 1, ReconciliationInterval: time.Minute}
+	err := cfg.Validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "at least 1")
+	assert.NotContains(t, err.Error(), "more than 1")
+}

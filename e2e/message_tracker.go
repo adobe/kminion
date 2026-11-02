@@ -97,10 +97,10 @@ func (t *messageTracker) onMessageArrived(arrivedMessage *EndToEndMessage) {
 	msg := item.Value()
 
 	expireTime := msg.creationTime().Add(t.svc.config.Consumer.RoundtripSla)
-	isExpired := time.Now().Before(expireTime)
+	arrivedInTime := time.Now().Before(expireTime)
 	latency := time.Since(msg.creationTime())
 
-	if !isExpired {
+	if !arrivedInTime {
 		// Message arrived late, but was still in cache. We don't increment the lost counter here because eventually
 		// it will be evicted from the cache. This case should only pop up if the sla time is exceeded, but if the
 		// item has not been evicted from the cache yet.
@@ -133,7 +133,7 @@ func (t *messageTracker) onMessageExpired(key string, reason ttlcache.EvictionRe
 		zap.Int64("age_ms", age.Milliseconds()),
 		zap.Int("partition", msg.partition),
 		zap.String("message_id", msg.MessageID),
-		zap.Bool("successfully_produced", msg.state == EndToEndMessageStateProducedSuccessfully),
-		zap.Float64("produce_latency_seconds", msg.produceLatency),
+		zap.Bool("successfully_produced", msg.getState() == EndToEndMessageStateProducedSuccessfully),
+		zap.Float64("produce_latency_seconds", msg.getProduceLatency()),
 	)
 }
