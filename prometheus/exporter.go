@@ -13,7 +13,7 @@ import (
 )
 
 // CollectTimeout is the time limit for one collection of all metrics. The HTTP timeouts in main.go are based on it.
-const CollectTimeout = 60 * time.Second
+const CollectTimeout = 360 * time.Second
 
 // Exporter is the Prometheus exporter that implements the prometheus.Collector interface
 type Exporter struct {

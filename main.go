@@ -19,6 +19,7 @@ import (
 	"github.com/redpanda-data/kminion/v2/logging"
 	"github.com/redpanda-data/kminion/v2/minion"
 	"github.com/redpanda-data/kminion/v2/prometheus"
+	"go.uber.org/automaxprocs/maxprocs"
 	"go.uber.org/zap"
 )
 
@@ -32,6 +33,7 @@ var (
 	// builtAt is a string that represent a human-readable date when the binary was built.
 	builtAt = "N/A"
 	// commit is a string that represents the last git commit for this build.
+	//nolint:unused
 	commit = "N/A"
 )
 
@@ -52,14 +54,16 @@ func main() {
 	if err != nil {
 		startupLogger.Fatal("failed to parse config", zap.Error(err))
 	}
-
 	logger := logging.NewLogger(cfg.Logger, cfg.Exporter.Namespace).Named("main")
-	if err != nil {
-		startupLogger.Fatal("failed to create new logger", zap.Error(err))
-	}
-
 	logger.Info("started kminion", zap.String("version", version), zap.String("built_at", builtAt))
 
+	// set GOMAXPROCS automatically
+	l := func(format string, a ...interface{}) {
+		logger.Info(fmt.Sprintf(format, a...))
+	}
+	if _, err = maxprocs.Set(maxprocs.Logger(l)); err != nil {
+		logger.Fatal("failed to set GOMAXPROCS automatically", zap.Error(err))
+	}
 	// Setup context that stops when the application receives an interrupt or termination signal
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -98,7 +102,7 @@ func main() {
 			wrappedRegisterer,
 		)
 		if err != nil {
-			logger.Fatal("failed to create end-to-end monitoring service: %w", zap.Error(err))
+			logger.Fatal("failed to create end-to-end monitoring service", zap.Error(err))
 		}
 
 		if err = e2eService.Start(ctx); err != nil {
@@ -119,11 +123,10 @@ func main() {
 			promclient.DefaultRegisterer,
 			promhttp.HandlerFor(
 				promclient.DefaultGatherer,
-				// Every scrape sends requests to all brokers, so limit the parallel scrapes. 3 allows an HA Prometheus
-				// pair and one more client. Other requests get a 503 at once.
+				// Every scrape sends requests to all brokers, so limit parallel scrapes. Extra requests get a 503 at once.
 				// With a Timeout, the handler writes the response to a buffer and frees its slot before the response
 				// goes to the client, so a client that does not read cannot hold a slot.
-				promhttp.HandlerOpts{MaxRequestsInFlight: 3, Timeout: metricsHandlerTimeout},
+				promhttp.HandlerOpts{MaxRequestsInFlight: 5, Timeout: metricsHandlerTimeout},
 			),
 		),
 	)
@@ -134,7 +137,12 @@ func main() {
 	// WriteTimeout closes the connection of a client that does not read the response, so the buffered response
 	// does not stay in memory.
 	// IdleTimeout closes keep-alive connections that wait for a new request. It is longer than common scrape intervals.
-	srv := &http.Server{Addr: address, ReadHeaderTimeout: 10 * time.Second, WriteTimeout: metricsWriteTimeout, IdleTimeout: 2 * time.Minute}
+	srv := &http.Server{
+		Addr:              address,
+		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      metricsWriteTimeout,
+		IdleTimeout:       2 * time.Minute,
+	}
 	go func() {
 		<-ctx.Done()
 		if err := srv.Shutdown(context.Background()); err != nil {
