@@ -209,7 +209,7 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 			}
 
 			// Without a passphrase both decrypt functions return unclear errors.
-			isEncrypted := pemBlock.Type == "ENCRYPTED PRIVATE KEY" || x509.IsEncryptedPEMBlock(pemBlock)
+			isEncrypted := pemBlock.Type == "ENCRYPTED PRIVATE KEY" || x509.IsEncryptedPEMBlock(pemBlock) //nolint:staticcheck // Supporting legacy keys for backward compatibility
 			if isEncrypted && cfg.TLS.Passphrase == "" {
 				return nil, fmt.Errorf("private key is encrypted, but kafka.tls.passphrase is not set")
 			}
@@ -224,12 +224,12 @@ func NewKgoConfig(cfg Config, logger *zap.Logger) ([]kgo.Opt, error) {
 					return nil, fmt.Errorf("failed to encode decrypted private key: %w", err)
 				}
 				privateKey = pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
-			} else if x509.IsEncryptedPEMBlock(pemBlock) {
+			} else if x509.IsEncryptedPEMBlock(pemBlock) { //nolint:staticcheck // Supporting legacy keys for backward compatibility
 				// NewKgoConfig runs for every client and every health check tick, so warn only once.
 				legacyPEMWarnOnce.Do(func() {
 					logger.Warn("the TLS private key uses legacy PEM encryption, which is insecure. Use a PKCS#8 encrypted key instead")
 				})
-				decryptedKey, err := x509.DecryptPEMBlock(pemBlock, []byte(cfg.TLS.Passphrase))
+				decryptedKey, err := x509.DecryptPEMBlock(pemBlock, []byte(cfg.TLS.Passphrase)) //nolint:staticcheck // Supporting legacy keys for backward compatibility
 				if err != nil {
 					return nil, fmt.Errorf("private key is encrypted, but could not decrypt it: %w", err)
 				}

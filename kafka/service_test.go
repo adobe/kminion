@@ -75,11 +75,13 @@ func TestNewService_OAuthBearerTokenEndpointScheme(t *testing.T) {
 		name     string
 		endpoint string
 		wantWarn bool
+		wantErr  bool
 	}{
 		{name: "https", endpoint: "https://auth.example.com/token", wantWarn: false},
 		{name: "uppercase https", endpoint: "HTTPS://auth.example.com/token", wantWarn: false},
-		{name: "http", endpoint: "http://auth.example.com/token", wantWarn: true},
-		{name: "no scheme", endpoint: "auth.example.com/token", wantWarn: true},
+		{name: "loopback http", endpoint: "http://localhost:8080/token", wantWarn: true},
+		{name: "http", endpoint: "http://auth.example.com/token", wantErr: true},
+		{name: "no scheme", endpoint: "auth.example.com/token", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -91,7 +93,12 @@ func TestNewService_OAuthBearerTokenEndpointScheme(t *testing.T) {
 			cfg.SASL.OAuthBearer.TokenEndpoint = tt.endpoint
 			cfg.SASL.OAuthBearer.ClientID = "client"
 			cfg.SASL.OAuthBearer.ClientSecret = "dummy"
-			require.NoError(t, cfg.Validate())
+			err := cfg.Validate()
+			if tt.wantErr {
+				require.ErrorContains(t, err, "https")
+				return
+			}
+			require.NoError(t, err)
 
 			core, logs := observer.New(zap.WarnLevel)
 			NewService(cfg, zap.New(core))
