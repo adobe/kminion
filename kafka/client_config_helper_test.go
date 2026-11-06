@@ -52,7 +52,7 @@ func TestNewKgoConfig_EncryptedTLSKey(t *testing.T) {
 
 	pkcs8DER, err := pkcs8.MarshalPrivateKey(key, []byte(passphrase), nil)
 	require.NoError(t, err)
-	legacyBlock, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key), []byte(passphrase), x509.PEMCipherAES256)
+	legacyBlock, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key), []byte(passphrase), x509.PEMCipherAES256) //nolint:staticcheck // Testing legacy key compatibility
 	require.NoError(t, err)
 
 	tests := []struct {
@@ -102,14 +102,14 @@ func TestNewKgoConfig_LegacyTLSKeyUndetectedWrongPassphrase(t *testing.T) {
 	tmpl := &x509.Certificate{SerialNumber: big.NewInt(1), Subject: pkix.Name{CommonName: "kminion"}}
 	certDER, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
 	require.NoError(t, err)
-	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key), []byte("dummy-passphrase"), x509.PEMCipherAES256)
+	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", x509.MarshalPKCS1PrivateKey(key), []byte("dummy-passphrase"), x509.PEMCipherAES256) //nolint:staticcheck // Testing legacy key compatibility
 	require.NoError(t, err)
 
 	// About 1 in 256 wrong passphrases gives valid padding, so DecryptPEMBlock returns no error.
 	wrongPassphrase := ""
 	for i := 0; i < 10000 && wrongPassphrase == ""; i++ {
 		candidate := fmt.Sprintf("wrong-%d", i)
-		if _, err := x509.DecryptPEMBlock(block, []byte(candidate)); err == nil {
+		if _, err := x509.DecryptPEMBlock(block, []byte(candidate)); err == nil { //nolint:staticcheck // Testing legacy key compatibility
 			wrongPassphrase = candidate
 		}
 	}
