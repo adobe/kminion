@@ -13,19 +13,30 @@ func (s *Service) GetTopicConfigs(ctx context.Context) (*kmsg.DescribeConfigsRes
 		return nil, fmt.Errorf("failed to get metadata: %w", err)
 	}
 
-	req := kmsg.NewDescribeConfigsRequest()
+	req := s.newTopicConfigsRequest(metadata.Topics)
+	if len(req.Resources) == 0 {
+		return kmsg.NewPtrDescribeConfigsResponse(), nil
+	}
 
-	for _, topic := range metadata.Topics {
+	res, err := req.RequestWith(ctx, s.client)
+	if err != nil {
+		return nil, fmt.Errorf("failed to request topic configs: %w", err)
+	}
+
+	return res, nil
+}
+
+func (s *Service) newTopicConfigsRequest(topics []kmsg.MetadataResponseTopic) kmsg.DescribeConfigsRequest {
+	req := kmsg.NewDescribeConfigsRequest()
+	for _, topic := range topics {
+		if !s.IsTopicAllowed(*topic.Topic) {
+			continue
+		}
 		resourceReq := kmsg.NewDescribeConfigsRequestResource()
 		resourceReq.ResourceType = kmsg.ConfigResourceTypeTopic
 		resourceReq.ResourceName = *topic.Topic
 		req.Resources = append(req.Resources, resourceReq)
 	}
 
-	res, err := req.RequestWith(ctx, s.client)
-	if err != nil {
-		return nil, fmt.Errorf("failed to request metadata: %w", err)
-	}
-
-	return res, nil
+	return req
 }
